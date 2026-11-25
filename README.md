@@ -136,8 +136,9 @@ Current output:
   ok   embedded Lang.en.json, Lang.zh-CN.json, Ui.xaml, app.ico, QRCoder.dll
   ok   references only .NET Framework assemblies (8)
   ok   QR encoder embedded (QRCoder, MIT): 29x29 matrix, no QRCoder.dll on disk
+  ok   player view built off-screen and laid out on #0C0E11
   ok   opens in the manager's frame: "HD2 音乐"
-  ok   login window built off-screen and laid out: "网易云登录 · HD2QD.HD2Music"
+  ok   login window built off-screen and laid out: "登录 · HD2 音乐"
 OK: all checks passed
 ```
 
