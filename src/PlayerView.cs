@@ -53,8 +53,6 @@ namespace Hd2Qd.HD2Music
         ListBox _peek;
         TextBlock _peekCount;
         TextBlock _sysState;
-        TextBlock _sysQuality;
-        TextBlock _sysOrder;
         TextBlock _sysLyrics;
         TextBlock _sysQueue;
         TextBlock _sysFfmpeg;
@@ -803,8 +801,14 @@ namespace Hd2Qd.HD2Music
             StackPanel body = new StackPanel { Margin = new Thickness(14.0, 12.0, 14.0, 12.0) };
             body.Children.Add(SectionLabel("SYSTEM"));
             _sysState = SysRow(body, "STATE");
-            _sysQuality = SysRow(body, "QUALITY");
-            _sysOrder = SysRow(body, "ORDER");
+            body.Children.Add(SysSegmentRow("QUALITY", SegmentRow(Engine.Qualities, QualityName, _qualitySegments, delegate(string value)
+            {
+                _engine.SetQuality(value);
+            }, compact: true)));
+            body.Children.Add(SysSegmentRow("ORDER", SegmentRow(Engine.Orders, OrderName, _orderSegments, delegate(string value)
+            {
+                _engine.SetOrder(value);
+            }, compact: true)));
             _sysLyrics = SysRow(body, "LYRICS");
             _sysQueue = SysRow(body, "QUEUE");
             _sysPlaylist = SysRow(body, "PLAYLIST");
@@ -813,6 +817,24 @@ namespace Hd2Qd.HD2Music
             _sysHelper = SysRow(body, "HELPER");
             card.Child = body;
             return card;
+        }
+
+        static FrameworkElement SysSegmentRow(string label, UIElement control)
+        {
+            Grid row = new Grid { Margin = new Thickness(0.0, 6.0, 0.0, 0.0) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76.0) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
+            row.Children.Add(new TextBlock
+            {
+                Text = label,
+                FontFamily = Theme.Font("Mono"),
+                FontSize = 8.5,
+                Foreground = Theme.Muted,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            Grid.SetColumn(control, 1);
+            row.Children.Add(control);
+            return row;
         }
 
         static TextBlock SysRow(StackPanel body, string label)
@@ -1299,18 +1321,16 @@ namespace Hd2Qd.HD2Music
                 FontSize = 22.0,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = Theme.Ink,
-                Margin = new Thickness(0.0, 2.0, 0.0, 14.0)
+                Margin = new Thickness(0.0, 2.0, 0.0, 4.0)
             });
-
-            body.Children.Add(SheetSection("PLAYBACK"));
-            body.Children.Add(SettingRow("音质", SegmentRow(Engine.Qualities, QualityName, _qualitySegments, delegate(string value)
+            body.Children.Add(new TextBlock
             {
-                _engine.SetQuality(value);
-            })));
-            body.Children.Add(SettingRow("播放顺序", SegmentRow(Engine.Orders, OrderName, _orderSegments, delegate(string value)
-            {
-                _engine.SetOrder(value);
-            })));
+                Text = "音质与播放顺序在控制台的 SYSTEM 面板中切换。",
+                FontSize = 11.0,
+                Foreground = Theme.Muted,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0.0, 0.0, 0.0, 10.0)
+            });
 
             body.Children.Add(SheetSection("LYRICS"));
             UiState initial = _engine.Snapshot();
@@ -1442,7 +1462,7 @@ namespace Hd2Qd.HD2Music
             public Button Button;
         }
 
-        FrameworkElement SegmentRow(string[] values, Func<string, string> label, List<Segment> store, Action<string> choose)
+        FrameworkElement SegmentRow(string[] values, Func<string, string> label, List<Segment> store, Action<string> choose, bool compact = false)
         {
             StackPanel row = new StackPanel { Orientation = Orientation.Horizontal };
             foreach (string value in values)
@@ -1451,11 +1471,11 @@ namespace Hd2Qd.HD2Music
                 {
                     Content = label(value),
                     Style = Theme.S("Ghost"),
-                    Height = 30.0,
-                    MinHeight = 30.0,
-                    Padding = new Thickness(8.0, 0.0, 8.0, 0.0),
-                    FontSize = 10.5,
-                    Margin = new Thickness(0.0, 0.0, 6.0, 0.0)
+                    Height = compact ? 24.0 : 30.0,
+                    MinHeight = compact ? 24.0 : 30.0,
+                    Padding = new Thickness(compact ? 5.0 : 8.0, 0.0, compact ? 5.0 : 8.0, 0.0),
+                    FontSize = compact ? 9.0 : 10.5,
+                    Margin = new Thickness(0.0, 0.0, compact ? 4.0 : 6.0, 0.0)
                 };
                 string chosen = value;
                 button.Click += delegate
@@ -1623,8 +1643,6 @@ namespace Hd2Qd.HD2Music
 
             _sysState.Text = stateName;
             _sysState.Foreground = state.State == "playing" ? Theme.Yellow : Theme.Ink;
-            _sysQuality.Text = QualityName(state.Quality);
-            _sysOrder.Text = OrderName(state.Order);
             _sysLyrics.Text = state.LyricsEnabled ? "ON" : "OFF";
             _sysQueue.Text = state.Count + " TRACKS";
             _sysPlaylist.Text = string.IsNullOrEmpty(state.PlaylistName) ? "—" : state.PlaylistName;

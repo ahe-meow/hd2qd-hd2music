@@ -32,14 +32,15 @@ One command bar, five views, no sidebar and no separate player strip:
 
 - **CONSOLE** — the cover, the current line and its translation with the next line under it, the
   16-band spectrum the mod also draws in game, the transport and the volume; on the right, the
-  next five tracks and a SYSTEM panel (state, quality, order, lyrics, queue, playlist, position,
-  ffmpeg, helper lock).
+  next five tracks and a SYSTEM panel: state, **quality and order as segmented switches**,
+  lyrics, queue, playlist, position, ffmpeg and the helper lock.
 - **LIBRARY** — playlist cards as numbered tiles; **QUEUE** and **SEARCH** — two-line track tables
   (title over artist) with the current row in yellow; **RADIO** — channels on the left, episodes
   on the right.
-- The gear opens a settings sheet over the same window (playback, lyrics, decoder, account,
-  about); Esc closes it. The status strip along the bottom carries account, queue, quality,
-  ffmpeg and the plugin's version in mono.
+- The gear opens a settings sheet over the same window (lyrics, decoder, account, about);
+  quality and order live in the console's SYSTEM panel, where they are one click away. Esc
+  closes the sheet. The status strip carries the current reason (reading a playlist, buffering,
+  …), account, queue, quality, ffmpeg and the version in mono.
 
 Cards are grid-lined ground, section labels are small caps with a yellow square, numbers are
 mono, and yellow is the only accent — the manager's own board, not a stock WPF window.
