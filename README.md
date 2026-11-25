@@ -49,9 +49,10 @@ mono, and yellow is the only accent — the manager's own board, not a stock WPF
 1. HD2 Mod Quick Deploy **0.15.0 or later** (plugin Api 2).
 2. **Plugins** page → **Add plugin…** → `HD2QD.HD2Music.dll` (or drop the file on the page).
 3. Deploy **HD2 Music** in Arsenal, start the game, then open **HD2 Music** on the Plugins page.
-4. Decoding needs `ffmpeg.exe`. The mod's package carries it as `网易云在线助手\tools\ffmpeg.exe`;
-   put it next to the plugin, in the manager's settings folder, or pick it once on the plugin's
-   **设置** page (the path is remembered in `ncm_ffmpeg.txt`). `HD2MUSIC_FFMPEG` overrides it.
+4. The decoder travels inside the DLL: FFmpeg 6.1.1 essentials (~79 MB) is written once, next
+   to the plugin or into the player's settings folder, when neither has an `ffmpeg.exe`. An
+   existing file beside the plugin, in the settings folder, or chosen on the **设置** page is
+   used instead (`ncm_ffmpeg.txt` remembers it); `HD2MUSIC_FFMPEG` overrides everything.
 
 The plugin and the mod's Python helper (`网易云在线助手`) **cannot run at the same time**: both
 take `%LOCALAPPDATA%\HD2Phone\ncm_helper.lock`, and both write the same state files. The plugin
@@ -71,6 +72,7 @@ Under `%LOCALAPPDATA%\HD2Phone`:
 | `ncm_session.json` | The NetEase cookies; written only when you sign in. |
 | `ncm_pending_login.json` | The QR login session while a QR is on screen. |
 | `ncm_lyrics_enabled.txt`, `ncm_quality.txt`, `ncm_order.txt`, `ncm_automix.txt`, `ncm_ffmpeg.txt` | The plugin's own settings, the same names the helper uses. |
+| `ffmpeg.exe` | Written next to the plugin (or in this folder) from the packed copy when none exists; the decoder the player spawns. |
 | `ncm_helper.lock` | The single-instance lock shared with the helper. |
 | `ncm_game_alive.txt` | **Read** only: the mod's heartbeat. Playback is refused without it. |
 
@@ -133,9 +135,10 @@ Current output:
   ok   target framework .NETFramework,Version=v4.8
   ok   Api = 2 (a const the manager reads before running any code)
   ok   Kind = window
-  ok   embedded Lang.en.json, Lang.zh-CN.json, Ui.xaml, app.ico, QRCoder.dll
+  ok   embedded Lang.en.json, Lang.zh-CN.json, Ui.xaml, app.ico, QRCoder.dll, ffmpeg.exe.gz
   ok   references only .NET Framework assemblies (8)
   ok   QR encoder embedded (QRCoder, MIT): 29x29 matrix, no QRCoder.dll on disk
+  ok   embedded ffmpeg extracted to a temp folder: 78 MB, SHA-256 matches
   ok   player view built off-screen and laid out on #0C0E11
   ok   opens in the manager's frame: "HD2 音乐"
   ok   login window built off-screen and laid out: "登录 · HD2 音乐"
@@ -143,8 +146,9 @@ OK: all checks passed
 ```
 
 Runtime dependencies: .NET Framework 4.8 (part of Windows 10/11), `System.Web.Extensions`
-(part of the framework), WPF, and `ffmpeg.exe` for decoding. The QR encoder travels inside the
-DLL (QRCoder 1.4.3, MIT), so no second file has to be installed.
+(part of the framework) and WPF. Nothing else has to be installed: the QR encoder (QRCoder
+1.4.3, MIT) and FFmpeg 6.1.1 essentials (GPLv3) travel inside the DLL; FFmpeg is extracted on
+first use and checked against its packed SHA-256. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Licence and credits
 
@@ -158,6 +162,9 @@ MIT — see [LICENSE](LICENSE).
   plugin is not affiliated with it.
 - QR encoding: [QRCoder](https://github.com/codebude/QRCoder) 1.4.3 (MIT), by Raffael Herrmann,
   embedded in the DLL and loaded from bytes.
+- The bundled decoder is FFmpeg 6.1.1-essentials_build (gyan.dev), GPLv3, extracted at run
+  time; it is a separate program, not part of this MIT-licensed code. Source and licence:
+  [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ---
 
@@ -169,7 +176,8 @@ MIT — see [LICENSE](LICENSE).
 歌词和频谱照常工作。
 
 - 安装：管理器 0.15.0 以上 → 插件页 → 添加 `HD2QD.HD2Music.dll`。
-- 解码需要 `ffmpeg.exe`：放在插件旁、管理器设置目录，或在插件「设置」页选择一次。
+- 解码器已随 DLL 打包（FFmpeg 6.1.1 essentials，约 79 MB）：首次启动若插件旁与管理器设置目录
+  都没有 `ffmpeg.exe`，插件会自动释放一份并校验 SHA-256；已有文件或「设置」页选择的路径优先。
 - 插件与压缩包里的 Python 助手**不能同时运行**（共用 `ncm_helper.lock`）；插件只在打开窗口或
   执行命令时才占锁，不会在管理器启动时抢占。
 - 状态字段与助手 1.2.3 的 `publish()` 逐项对照；游戏内“加载更多”相关的分页字段未写入，

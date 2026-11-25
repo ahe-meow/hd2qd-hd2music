@@ -124,8 +124,23 @@ namespace Hd2Qd.HD2Music
         }
 
         /// <summary>Nothing starts at manager launch: the player takes the mod helper's single
-        /// instance lock only when its window or a command actually needs it.</summary>
-        public static bool Start(Dictionary<string, object> host) => false;
+        /// instance lock only when its window or a command actually needs it. The decoder is
+        /// written out here, on the manager's background thread, so opening the window does not
+        /// wait for 79 MB of ffmpeg.</summary>
+        public static bool Start(Dictionary<string, object> host)
+        {
+            if (host != null && host.ContainsKey("home"))
+            {
+                try
+                {
+                    Ffmpeg.Ensure();
+                }
+                catch
+                {
+                }
+            }
+            return false;
+        }
 
         static Engine EnsureEngine(Dictionary<string, object> host)
         {
@@ -133,6 +148,7 @@ namespace Hd2Qd.HD2Music
             {
                 return _engine;
             }
+            Ffmpeg.Ensure();
             _engine = new Engine(FindFfmpeg(host));
             _engine.Start();
             HookExit();

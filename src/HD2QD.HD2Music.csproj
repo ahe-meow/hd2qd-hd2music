@@ -38,6 +38,7 @@
     <Compile Include="CoverArt.cs" />
     <Compile Include="CoverService.cs" />
     <Compile Include="Engine.cs" />
+    <Compile Include="Ffmpeg.cs" />
     <Compile Include="GameWatch.cs" />
     <Compile Include="HttpJson.cs" />
     <Compile Include="LoginWindow.cs" />
@@ -76,6 +77,8 @@
     <!-- the plugin's own icon: the manager reads a manifest resource named exactly "app.ico"
          for the picture on the plugin's card -->
     <EmbeddedResource Include="app.ico" LogicalName="app.ico" />
+    <!-- the decoder, packed once and written out by Ffmpeg.cs where the player runs it -->
+    <EmbeddedResource Include="../assets/ffmpeg.exe.gz" LogicalName="ffmpeg.exe.gz" />
     <EmbeddedResource Include="$(PkgQRCoder)\lib\net40\QRCoder.dll" LogicalName="QRCoder.dll" />
     <Reference Include="System.Web.Extensions" />
   </ItemGroup>

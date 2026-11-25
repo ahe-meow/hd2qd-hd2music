@@ -90,13 +90,14 @@ namespace Hd2Qd.HD2Music
         bool _suppressRadio;
 
         TextBlock _ffmpeg;
-        Button _quality;
-        Button _order;
+        readonly List<Segment> _qualitySegments = new List<Segment>();
+        readonly List<Segment> _orderSegments = new List<Segment>();
         CheckBox _lyricsTick;
         CheckBox _automixTick;
         TextBlock _sheetAccount;
         TextBlock _sheetLock;
 
+        TextBlock _statusNotice;
         TextBlock _statusAccount;
         TextBlock _statusQueue;
         TextBlock _statusQuality;
@@ -404,6 +405,9 @@ namespace Hd2Qd.HD2Music
             dock.Children.Add(version);
 
             StackPanel left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            _statusNotice = StatusPart(left, "STATUS —");
+            _statusNotice.MaxWidth = 340.0;
+            _statusNotice.TextTrimming = TextTrimming.CharacterEllipsis;
             _statusAccount = StatusPart(left, "ACCOUNT —");
             _statusQueue = StatusPart(left, "QUEUE 0");
             _statusQuality = StatusPart(left, "QUALITY —");
@@ -459,7 +463,9 @@ namespace Hd2Qd.HD2Music
             page.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16.0) });
             page.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(344.0) });
 
-            page.Children.Add(Card(BuildHero()));
+            Border heroCard = Card(BuildHero());
+            heroCard.Padding = new Thickness(18.0);
+            page.Children.Add(heroCard);
 
             Grid rail = new Grid();
             rail.RowDefinitions.Add(new RowDefinition { Height = new GridLength(300.0) });
@@ -1297,18 +1303,14 @@ namespace Hd2Qd.HD2Music
             });
 
             body.Children.Add(SheetSection("PLAYBACK"));
-            _quality = CycleButton(delegate
+            body.Children.Add(SettingRow("音质", SegmentRow(Engine.Qualities, QualityName, _qualitySegments, delegate(string value)
             {
-                UiState state = _engine.Snapshot();
-                _engine.SetQuality(Next(Engine.Qualities, state.Quality));
-            });
-            body.Children.Add(SettingRow("音质", _quality));
-            _order = CycleButton(delegate
+                _engine.SetQuality(value);
+            })));
+            body.Children.Add(SettingRow("播放顺序", SegmentRow(Engine.Orders, OrderName, _orderSegments, delegate(string value)
             {
-                UiState state = _engine.Snapshot();
-                _engine.SetOrder(Next(Engine.Orders, state.Order));
-            });
-            body.Children.Add(SettingRow("播放顺序", _order));
+                _engine.SetOrder(value);
+            })));
 
             body.Children.Add(SheetSection("LYRICS"));
             UiState initial = _engine.Snapshot();
@@ -1386,8 +1388,8 @@ namespace Hd2Qd.HD2Music
                 LineHeight = 18.0
             });
             StackPanel links = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0.0, 10.0, 0.0, 0.0) };
-            links.Children.Add(GhostButton("作者主页", delegate { OpenUrl("https://space.bilibili.com/283469182"); }));
-            links.Children.Add(GhostButton("GitHub 仓库", delegate { OpenUrl("https://github.com/ahe-meow/hd2qd-hd2music"); }));
+            links.Children.Add(GhostButton("原作者主页", delegate { OpenUrl("https://space.bilibili.com/283469182"); }));
+            links.Children.Add(GhostButton("本项目仓库", delegate { OpenUrl("https://github.com/ahe-meow/hd2qd-hd2music"); }));
             body.Children.Add(links);
             body.Children.Add(new TextBlock
             {
@@ -1434,30 +1436,62 @@ namespace Hd2Qd.HD2Music
             return row;
         }
 
-        Button CycleButton(Action action)
+        sealed class Segment
         {
-            Button button = new Button
+            public string Value;
+            public Button Button;
+        }
+
+        FrameworkElement SegmentRow(string[] values, Func<string, string> label, List<Segment> store, Action<string> choose)
+        {
+            StackPanel row = new StackPanel { Orientation = Orientation.Horizontal };
+            foreach (string value in values)
             {
-                Content = "—",
-                Style = Theme.S("Ghost"),
-                MinHeight = 30.0,
-                Height = 30.0,
-                Padding = new Thickness(12.0, 0.0, 12.0, 0.0),
-                FontSize = 11.0,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                HorizontalContentAlignment = HorizontalAlignment.Left
-            };
-            button.Click += delegate
+                Button button = new Button
+                {
+                    Content = label(value),
+                    Style = Theme.S("Ghost"),
+                    Height = 30.0,
+                    MinHeight = 30.0,
+                    Padding = new Thickness(8.0, 0.0, 8.0, 0.0),
+                    FontSize = 10.5,
+                    Margin = new Thickness(0.0, 0.0, 6.0, 0.0)
+                };
+                string chosen = value;
+                button.Click += delegate
+                {
+                    try
+                    {
+                        choose(chosen);
+                        Refresh();
+                    }
+                    catch
+                    {
+                    }
+                };
+                store.Add(new Segment { Value = chosen, Button = button });
+                row.Children.Add(button);
+            }
+            return row;
+        }
+
+        static void MarkSegments(List<Segment> segments, string value)
+        {
+            foreach (Segment segment in segments)
             {
-                try
+                if (segment.Value == value)
                 {
-                    action();
+                    segment.Button.Background = Theme.Yellow;
+                    segment.Button.Foreground = Theme.TapeInk;
+                    segment.Button.BorderBrush = Theme.Yellow;
                 }
-                catch
+                else
                 {
+                    segment.Button.ClearValue(Control.BackgroundProperty);
+                    segment.Button.ClearValue(Control.ForegroundProperty);
+                    segment.Button.ClearValue(Control.BorderBrushProperty);
                 }
-            };
-            return button;
+            }
         }
 
         void OpenSheet()
@@ -1578,8 +1612,8 @@ namespace Hd2Qd.HD2Music
             _volume.Value = state.Volume;
             _suppressVolume = false;
 
-            _quality.Content = QualityName(state.Quality);
-            _order.Content = OrderName(state.Order);
+            MarkSegments(_qualitySegments, state.Quality);
+            MarkSegments(_orderSegments, state.Order);
             _lyricsTick.IsChecked = state.LyricsEnabled;
             _automixTick.IsChecked = state.Automix;
             _ffmpeg.Text = _engine.FfmpegPath;
@@ -1612,6 +1646,18 @@ namespace Hd2Qd.HD2Music
             RefreshRadio(state);
 
             _statusAccount.Text = "ACCOUNT " + (string.IsNullOrEmpty(state.Account) ? "—" : state.Account);
+            string reason = state.Notice;
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                reason = state.State == "loading" ? "正在读取…"
+                    : state.State == "buffering" ? "缓冲中…"
+                    : state.State == "playing" ? "播放中"
+                    : state.State == "paused" ? "已暂停"
+                    : state.State == "finished" ? "播放结束"
+                    : "空闲";
+            }
+            _statusNotice.Text = "STATUS " + reason;
+            _statusNotice.Foreground = (state.State == "loading" || state.State == "buffering" || reason.Contains("正在")) ? Theme.Yellow : Theme.Muted;
             _statusQueue.Text = "QUEUE " + state.Count;
             _statusQuality.Text = "QUALITY " + state.Quality.ToUpperInvariant();
             bool ffmpegReady = File.Exists(_engine.FfmpegPath);
@@ -1975,12 +2021,6 @@ namespace Hd2Qd.HD2Music
                 }
             };
             return button;
-        }
-
-        static string Next(string[] values, string current)
-        {
-            int at = Array.IndexOf(values, current);
-            return values[(at + 1) % values.Length];
         }
 
         static string QualityName(string value) => value switch

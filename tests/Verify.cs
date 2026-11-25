@@ -74,6 +74,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckReferences(asm);
             CheckText(asm, plugin);
             CheckQr(asm);
+            CheckFfmpeg(asm);
             BuildWindows(asm);
 
             Console.WriteLine(_failed == 0 ? "OK: all checks passed" : _failed + " check(s) failed");
@@ -149,7 +150,7 @@ namespace Hd2Qd.HD2Music.Verify
         static void CheckResources(Assembly asm)
         {
             var names = asm.GetManifestResourceNames();
-            foreach (string wanted in new[] { "Lang.en.json", "Lang.zh-CN.json", "Ui.xaml", "app.ico", "QRCoder.dll" })
+            foreach (string wanted in new[] { "Lang.en.json", "Lang.zh-CN.json", "Ui.xaml", "app.ico", "QRCoder.dll", "ffmpeg.exe.gz" })
             {
                 if (names.Contains(wanted))
                 {
@@ -285,6 +286,69 @@ namespace Hd2Qd.HD2Music.Verify
             {
                 Exception inner = e is TargetInvocationException tie ? tie.InnerException : e;
                 Fail("the QR encoder does not run: " + inner.Message);
+            }
+        }
+
+        static void CheckFfmpeg(Assembly asm)
+        {
+            Type ffmpeg = asm.GetType("Hd2Qd.HD2Music.Ffmpeg");
+            if (ffmpeg == null)
+            {
+                Fail("Ffmpeg is missing");
+                return;
+            }
+            MethodInfo extract = ffmpeg.GetMethod("ExtractTo", BindingFlags.NonPublic | BindingFlags.Static);
+            string sha = ffmpeg.GetField("Sha256", BindingFlags.NonPublic | BindingFlags.Static)?.GetRawConstantValue() as string;
+            if (extract == null || string.IsNullOrEmpty(sha))
+            {
+                Fail("Ffmpeg.ExtractTo or its SHA-256 is missing");
+                return;
+            }
+            string folder = Path.Combine(Path.GetTempPath(), "hd2qd-ffmpeg-verify-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            string target = Path.Combine(folder, "ffmpeg.exe");
+            try
+            {
+                extract.Invoke(null, new object[] { target });
+                var info = new FileInfo(target);
+                if (!info.Exists || info.Length < 50L * 1024 * 1024)
+                {
+                    Fail("the embedded ffmpeg did not extract");
+                }
+                else
+                {
+                    string actual;
+                    using (var algorithm = System.Security.Cryptography.SHA256.Create())
+                    using (var stream = File.OpenRead(target))
+                    {
+                        actual = BitConverter.ToString(algorithm.ComputeHash(stream)).Replace("-", "");
+                    }
+                    if (!string.Equals(actual, sha, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Fail("the extracted ffmpeg does not match the packed SHA-256");
+                    }
+                    else
+                    {
+                        Pass("embedded ffmpeg extracted to a temp folder: " + (info.Length / 1024 / 1024) + " MB, SHA-256 matches");
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Exception inner = e is TargetInvocationException tie ? tie.InnerException : e;
+                Fail("the embedded ffmpeg does not extract: " + inner.Message);
+            }
+            finally
+            {
+                try
+                {
+                    if (Directory.Exists(folder))
+                    {
+                        Directory.Delete(folder, true);
+                    }
+                }
+                catch
+                {
+                }
             }
         }
 
