@@ -1,0 +1,83 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- HD2QD.HD2Music.dll: a plugin of HD2 Mod Quick Deploy, a body in the manager's frame (PlayerView.cs).
+       .NET Framework 4.8, as the manager; the file name must be HD2QD.<name>.dll. It shares no
+       types with the manager: strings, numbers, bools, delegates and Json shapes only.
+
+       The player is the NetEase Cloud Music helper of the HD2 Music mod, brought into the
+       manager: it writes the same %LOCALAPPDATA%\HD2Phone\ncm_state.txt the mod's Lua reads, and
+       takes the helper's single-instance lock (ncm_helper.lock) so only one of the two plays. -->
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>HD2QD.HD2Music</AssemblyName>
+    <RootNamespace>Hd2Qd.HD2Music</RootNamespace>
+    <Version>1.0.0</Version>
+    <Product>HD2QD HD2 Music</Product>
+    <Company>ahe-meow</Company>
+    <Copyright>MIT License</Copyright>
+    <Deterministic>true</Deterministic>
+    <DebugType>none</DebugType>
+    <PathMap>$(MSBuildProjectDirectory)\..=src</PathMap>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- the QR encoder, embedded as a resource and loaded from bytes (QrCode.cs): the plugin
+         stays one file. QRCoder 1.4.3, MIT, by Raffael Herrmann. -->
+    <PackageReference Include="QRCoder" Version="1.4.3" GeneratePathProperty="true" PrivateAssets="all" ExcludeAssets="compile;runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="AccountInfo.cs" />
+    <Compile Include="ApiException.cs" />
+    <Compile Include="CoverArt.cs" />
+    <Compile Include="CoverService.cs" />
+    <Compile Include="Engine.cs" />
+    <Compile Include="GameWatch.cs" />
+    <Compile Include="HttpJson.cs" />
+    <Compile Include="LoginWindow.cs" />
+    <Compile Include="LyricLine.cs" />
+    <Compile Include="Lyrics.cs" />
+    <Compile Include="LyricWord.cs" />
+    <Compile Include="NeteaseClient.cs" />
+    <Compile Include="OSError.cs" />
+    <Compile Include="PlaybackStatus.cs" />
+    <Compile Include="PlayerView.cs" />
+    <Compile Include="Playlist.cs" />
+    <Compile Include="Plugin.cs" />
+    <Compile Include="QrCode.cs" />
+    <Compile Include="QrVerificationRequired.cs" />
+    <Compile Include="RadioChannel.cs" />
+    <Compile Include="RadioEpisode.cs" />
+    <Compile Include="Session.cs" />
+    <Compile Include="SmsLoginError.cs" />
+    <Compile Include="StreamPlayer.cs" />
+    <Compile Include="Theme.cs" />
+    <Compile Include="Track.cs" />
+    <Compile Include="UiState.cs" />
+    <Compile Include="Util.cs" />
+    <Compile Include="WaveOut.cs" />
+    <Compile Include="Weapi.cs" />
+    <Compile Include="Words.cs" />
+  </ItemGroup>
+
+  <!-- the text, one file per language (Lang\<tag>.json), embedded as Lang.<tag>.json: Words.cs -->
+  <ItemGroup>
+    <EmbeddedResource Include="Lang\*.json" LogicalName="Lang.%(Filename).json" />
+    <!-- the manager's own styles, copied with their colours: Theme.cs. Read at run time, never
+         compiled into a window of its own (hence out of Page). -->
+    <Page Remove="Ui.xaml" />
+    <EmbeddedResource Include="Ui.xaml" LogicalName="Ui.xaml" />
+    <!-- the plugin's own icon: the manager reads a manifest resource named exactly "app.ico"
+         for the picture on the plugin's card -->
+    <EmbeddedResource Include="app.ico" LogicalName="app.ico" />
+    <EmbeddedResource Include="$(PkgQRCoder)\lib\net40\QRCoder.dll" LogicalName="QRCoder.dll" />
+    <Reference Include="System.Web.Extensions" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,203 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Windows;
+
+namespace Hd2Qd.HD2Music
+{
+    /// <summary>A plugin of HD2 Mod Quick Deploy: the NetEase Cloud Music helper of the HD2 Music
+    /// mod as a window of the manager — sign-in, playlists, search, playback, lyrics, and the
+    /// state the mod reads in game. The manager finds the one public class named Plugin in an
+    /// HD2QD.*.dll and calls it by name; nothing is shared but strings, numbers, bools, delegates
+    /// and Json shapes.</summary>
+    public static class Plugin
+    {
+        /// <summary>The contract's version. A plugin of another one is refused.</summary>
+        public const int Api = 2;
+
+        /// <summary>"window": a window of its own, opened from the card (Open).</summary>
+        public const string Kind = "window";
+
+        static Engine _engine;
+        static Window _window;
+        static bool _hooked;
+
+        public static string Title(string lang) => Words.Get(lang, "title");
+
+        public static string Summary(string lang) => Words.Get(lang, "summary");
+
+        /// <summary>Kind "window": the card's Open. The player is a window of its own, drawn in
+        /// the manager's theme; host["window"] would add the manager's frame around it, and the
+        /// player already carries the same frame's colours.</summary>
+        public static void Open(Window owner, Dictionary<string, object> host)
+        {
+            Engine engine = EnsureEngine(host);
+            if (_window == null || !_window.IsVisible)
+            {
+                _window = PlayerView.Show(owner, host, engine);
+                _window.Closed += delegate { _window = null; };
+            }
+            if (_window.WindowState == WindowState.Minimized)
+            {
+                _window.WindowState = WindowState.Normal;
+            }
+            _window.Activate();
+        }
+
+        /// <summary>Optional: commands added to the manager's command line, as rows of [name,
+        /// help]. A name the manager has itself is left out.</summary>
+        public static readonly string[][] Commands =
+        {
+            new[] { "hd2music", "NetEase Cloud Music of HD2 Music: status | play | pause | next | prev | stop | search <words> | login | lyrics <0|1> | vol <0-100>" },
+        };
+
+        /// <summary>Optional, with Commands: 0 done, 1 refused, 2 a wrong command line.</summary>
+        public static int Run(string command, string[] args, TextWriter output, Dictionary<string, object> host)
+        {
+            Engine engine = EnsureEngine(host);
+            string action = (args != null && args.Length != 0) ? args[0].ToLowerInvariant() : "status";
+            switch (action)
+            {
+                case "status":
+                {
+                    UiState ui = engine.Snapshot();
+                    if (engine.IsLockedOut)
+                    {
+                        output.WriteLine("locked: the NetEase helper of the mod is already running");
+                    }
+                    output.WriteLine("account: " + (string.IsNullOrEmpty(ui.Account) ? "(not signed in)" : ui.Account));
+                    output.WriteLine("state: " + ui.State + "  " + ui.Title + " / " + ui.Artist);
+                    output.WriteLine("queue: " + ui.Count + "  position: " + Util.FormatTime(ui.Pos) + " / " + Util.FormatTime(ui.Duration));
+                    output.WriteLine("ffmpeg: " + engine.FfmpegPath);
+                    output.WriteLine("notice: " + ui.Notice);
+                    return 0;
+                }
+                case "open":
+                    output.WriteLine("open the player from the manager's Plugins page; a command line has no window");
+                    return 1;
+                case "toggle":
+                case "play":
+                case "pause":
+                    engine.Toggle();
+                    return 0;
+                case "next":
+                    engine.Next();
+                    return 0;
+                case "prev":
+                    engine.Previous();
+                    return 0;
+                case "stop":
+                    engine.StopPlayback();
+                    return 0;
+                case "search":
+                    if (args.Length < 2)
+                    {
+                        output.WriteLine("usage: hd2music search <words>");
+                        return 2;
+                    }
+                    engine.Search(string.Join(" ", args.Skip(1)));
+                    return 0;
+                case "login":
+                    engine.BeginQrLogin();
+                    return 0;
+                case "lyrics":
+                    if (args.Length > 1 && (args[1] == "0" || args[1] == "1"))
+                    {
+                        engine.SetLyrics(args[1] == "1");
+                        return 0;
+                    }
+                    output.WriteLine("usage: hd2music lyrics 0|1");
+                    return 2;
+                case "vol":
+                    if (args.Length > 1 && int.TryParse(args[1], out int volume))
+                    {
+                        engine.SetVolume(volume);
+                        return 0;
+                    }
+                    output.WriteLine("usage: hd2music vol 0-100");
+                    return 2;
+                default:
+                    output.WriteLine("usage: hd2music status|play|pause|next|prev|stop|search|login|lyrics|vol");
+                    return 2;
+            }
+        }
+
+        /// <summary>Nothing starts at manager launch: the player takes the mod helper's single
+        /// instance lock only when its window or a command actually needs it.</summary>
+        public static bool Start(Dictionary<string, object> host) => false;
+
+        static Engine EnsureEngine(Dictionary<string, object> host)
+        {
+            if (_engine != null)
+            {
+                return _engine;
+            }
+            _engine = new Engine(FindFfmpeg(host));
+            _engine.Start();
+            HookExit();
+            return _engine;
+        }
+
+        static void HookExit()
+        {
+            if (_hooked)
+            {
+                return;
+            }
+            _hooked = true;
+            try
+            {
+                if (Application.Current != null)
+                {
+                    Application.Current.Exit += delegate { DisposeEngine(); };
+                }
+            }
+            catch
+            {
+            }
+            AppDomain.CurrentDomain.ProcessExit += delegate { DisposeEngine(); };
+        }
+
+        static void DisposeEngine()
+        {
+            try
+            {
+                _engine?.Dispose();
+            }
+            catch
+            {
+            }
+            _engine = null;
+        }
+
+        /// <summary>The mod's package carries tools\ffmpeg.exe; a player who keeps it elsewhere
+        /// picks it once on the settings page, and ncm_ffmpeg.txt remembers it. Nothing is
+        /// assumed about someone's disks beyond the manager's own folders.</summary>
+        static string FindFfmpeg(Dictionary<string, object> host)
+        {
+            string home = (host != null && host.TryGetValue("home", out object h)) ? h as string : null;
+            string saved = Util.ReadText(Path.Combine(Util.Root, "ncm_ffmpeg.txt"))?.Trim();
+            var candidates = new List<string>
+            {
+                Environment.GetEnvironmentVariable("HD2MUSIC_FFMPEG"),
+                Environment.GetEnvironmentVariable("NETMUSIC_FFMPEG"),
+                saved,
+                Path.Combine(Util.PluginDir, "ffmpeg.exe"),
+                Path.Combine(Util.PluginDir, "tools", "ffmpeg.exe"),
+                Path.Combine(Util.Root, "ffmpeg.exe"),
+                Path.Combine(Util.Root, "tools", "ffmpeg.exe"),
+                string.IsNullOrEmpty(home) ? null : Path.Combine(home, "ffmpeg.exe"),
+                string.IsNullOrEmpty(home) ? null : Path.Combine(home, "tools", "ffmpeg.exe"),
+            };
+            foreach (string candidate in candidates)
+            {
+                if (!string.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+            return Path.Combine(Util.PluginDir, "ffmpeg.exe");
+        }
+    }
+}

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Verify.exe release\HD2QD.HD2Music.dll: the plugin contract, the text, the icon, the
+       assemblies it needs, and a window built off-screen in a bare application (the manager
+       loads the file as bytes, so this does too). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Verify</AssemblyName>
+    <RootNamespace>Hd2Qd.HD2Music.Verify</RootNamespace>
+    <Deterministic>true</Deterministic>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Web.Extensions" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,376 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.Versioning;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Web.Script.Serialization;
+
+namespace Hd2Qd.HD2Music.Verify
+{
+    /// <summary>The checks the plugin can be held to without a game, a network or a manager:
+    /// the file name the manager accepts, one public Plugin with Api 2 and Kind "window", the
+    /// text in both languages, the embedded icon, the assemblies it needs (framework only), and
+    /// both windows built and laid out off-screen.</summary>
+    static class Program
+    {
+        static int _failed;
+
+        [STAThread]
+        static int Main(string[] args)
+        {
+            string path = Path.GetFullPath(args.Length > 0 ? args[0] : @"release\HD2QD.HD2Music.dll");
+            Console.WriteLine("verifying " + path);
+            if (!File.Exists(path))
+            {
+                return Fail("file is missing");
+            }
+            if (!Regex.IsMatch(Path.GetFileName(path), @"^HD2QD\.[A-Za-z0-9_-]+\.dll$"))
+            {
+                return Fail("file name is not HD2QD.<name>.dll");
+            }
+
+            Assembly asm;
+            try
+            {
+                asm = Assembly.Load(File.ReadAllBytes(path));   // as the manager loads it
+            }
+            catch (Exception e)
+            {
+                return Fail("not a .NET assembly the manager can load: " + e.Message);
+            }
+            Pass("loads from bytes, as PluginFiles.Load does");
+
+            if (asm.GetName().Name != "HD2QD.HD2Music")
+            {
+                Fail("assembly name is " + asm.GetName().Name);
+            }
+            else
+            {
+                Pass("assembly name HD2QD.HD2Music, version " + asm.GetName().Version.ToString(3));
+            }
+
+            TargetFrameworkAttribute framework = asm.GetCustomAttribute<TargetFrameworkAttribute>();
+            if (framework == null || !framework.FrameworkName.EndsWith("v4.8", StringComparison.Ordinal))
+            {
+                Fail("target framework is " + (framework?.FrameworkName ?? "unknown") + ", not .NET Framework 4.8");
+            }
+            else
+            {
+                Pass("target framework " + framework.FrameworkName);
+            }
+
+            Type plugin = CheckPlugin(asm);
+            if (plugin == null)
+            {
+                return 1;
+            }
+            CheckResources(asm);
+            CheckReferences(asm);
+            CheckText(asm, plugin);
+            CheckQr(asm);
+            BuildWindows(asm);
+
+            Console.WriteLine(_failed == 0 ? "OK: all checks passed" : _failed + " check(s) failed");
+            return _failed == 0 ? 0 : 1;
+        }
+
+        static Type CheckPlugin(Assembly asm)
+        {
+            Type[] types;
+            try
+            {
+                types = asm.GetTypes();
+            }
+            catch (ReflectionTypeLoadException e)
+            {
+                Fail("types do not load: " + string.Join("; ", e.LoaderExceptions.Where(x => x != null).Select(x => x.Message)));
+                return null;
+            }
+            Type[] plugins = types.Where(t => t.IsPublic && t.Name == "Plugin").ToArray();
+            if (plugins.Length != 1)
+            {
+                Fail(plugins.Length + " public classes named Plugin, expected 1");
+                return null;
+            }
+            Type plugin = plugins[0];
+            object api = plugin.GetField("Api")?.GetRawConstantValue();
+            if (!(api is int n) || n != 2)
+            {
+                Fail("Api is " + (api ?? "missing") + ", expected the constant 2");
+                return null;
+            }
+            Pass("Api = 2 (a const the manager reads before running any code)");
+
+            object kind = plugin.GetField("Kind")?.GetRawConstantValue();
+            if (!(kind is string k) || k != "window")
+            {
+                Fail("Kind is " + (kind ?? "missing") + ", expected \"window\"");
+                return null;
+            }
+            Pass("Kind = window");
+
+            if (!Has(plugin, "Title", typeof(string)) || !Has(plugin, "Summary", typeof(string)))
+            {
+                Fail("Title(string) or Summary(string) is missing");
+            }
+            MethodInfo open = plugin.GetMethod("Open", BindingFlags.Public | BindingFlags.Static);
+            if (open == null || open.GetParameters().Length != 2
+                || open.GetParameters()[0].ParameterType != typeof(Window)
+                || open.GetParameters()[1].ParameterType != typeof(Dictionary<string, object>))
+            {
+                Fail("Open(Window, Dictionary<string, object>) is missing");
+            }
+            else
+            {
+                Pass("Title, Summary and the window's Open are present");
+            }
+            if (!Has(plugin, "Run", typeof(int)) || !Has(plugin, "Start", typeof(bool)))
+            {
+                Fail("the optional Run or Start is missing");
+            }
+            string[][] commands = plugin.GetField("Commands")?.GetValue(null) as string[][];
+            if (commands == null || commands.Length == 0 || commands[0].Length != 2 || !commands[0][0].StartsWith("hd2music", StringComparison.Ordinal))
+            {
+                Fail("Commands does not offer hd2music");
+            }
+            else
+            {
+                Pass("command line: " + string.Join(", ", commands.Select(c => c[0])));
+            }
+            return plugin;
+        }
+
+        static void CheckResources(Assembly asm)
+        {
+            var names = asm.GetManifestResourceNames();
+            foreach (string wanted in new[] { "Lang.en.json", "Lang.zh-CN.json", "Ui.xaml", "app.ico", "QRCoder.dll" })
+            {
+                if (names.Contains(wanted))
+                {
+                    Pass("embedded " + wanted);
+                }
+                else
+                {
+                    Fail("embedded resource " + wanted + " is missing");
+                }
+            }
+            using (Stream icon = asm.GetManifestResourceStream("app.ico"))
+            {
+                if (icon == null || icon.Length < 6)
+                {
+                    Fail("app.ico is empty");
+                    return;
+                }
+                byte[] head = new byte[6];
+                icon.Read(head, 0, 6);
+                if (head[0] != 0 || head[1] != 0 || head[2] != 1 || head[3] != 0)
+                {
+                    Fail("app.ico is not an ICO file");
+                }
+                else
+                {
+                    Pass("app.ico is an ICO of " + icon.Length + " bytes");
+                }
+            }
+        }
+
+        static void CheckReferences(Assembly asm)
+        {
+            var framework = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "mscorlib", "System", "System.Core", "System.Web.Extensions", "System.Xml",
+                "System.Xaml", "System.Drawing", "System.Numerics", "System.Runtime",
+                "PresentationCore", "PresentationFramework", "WindowsBase", "System.Configuration",
+            };
+            var outside = asm.GetReferencedAssemblies()
+                .Where(r => !framework.Contains(r.Name))
+                .Select(r => r.Name).ToArray();
+            if (outside.Length != 0)
+            {
+                Fail("references outside the .NET Framework: " + string.Join(", ", outside));
+            }
+            else
+            {
+                Pass("references only .NET Framework assemblies (" + asm.GetReferencedAssemblies().Length + ")");
+            }
+        }
+
+        static void CheckText(Assembly asm, Type plugin)
+        {
+            var title = plugin.GetMethod("Title", BindingFlags.Public | BindingFlags.Static);
+            var summary = plugin.GetMethod("Summary", BindingFlags.Public | BindingFlags.Static);
+            string enTitle = (string)title.Invoke(null, new object[] { "en" });
+            string zhTitle = (string)title.Invoke(null, new object[] { "zh-CN" });
+            string enSummary = (string)summary.Invoke(null, new object[] { "en" });
+            string zhSummary = (string)summary.Invoke(null, new object[] { "zh-CN" });
+            if (string.IsNullOrWhiteSpace(enTitle) || enTitle == "title" || string.IsNullOrWhiteSpace(enSummary) || enSummary == "summary")
+            {
+                Fail("English title or summary is missing");
+            }
+            else
+            {
+                Pass("English: " + enTitle + " — " + enSummary);
+            }
+            if (zhTitle == enTitle || zhTitle == "title")
+            {
+                Fail("zh-CN title falls back to English");
+            }
+            else
+            {
+                Pass("zh-CN: " + zhTitle + " — " + zhSummary);
+            }
+            string deTitle = (string)title.Invoke(null, new object[] { "de-AT" });
+            if (deTitle != enTitle)
+            {
+                Fail("an unknown language does not fall back to English");
+            }
+            else
+            {
+                Pass("de-AT falls back to English");
+            }
+            object started = plugin.GetMethod("Start", BindingFlags.Public | BindingFlags.Static)
+                .Invoke(null, new object[] { new Dictionary<string, object>() });
+            if (!(started is bool) || (bool)started)
+            {
+                Fail("Start does not return false; the plugin would take the helper's lock at launch");
+            }
+            else
+            {
+                Pass("Start touches nothing: the lock is taken only by Open or a command");
+            }
+            foreach (string tag in new[] { "en", "zh-CN" })
+            {
+                string name = "Lang." + tag + ".json";
+                using (Stream stream = asm.GetManifestResourceStream(name))
+                using (var reader = new StreamReader(stream))
+                {
+                    var words = new JavaScriptSerializer().Deserialize<Dictionary<string, string>>(reader.ReadToEnd());
+                    if (!words.ContainsKey("title") || !words.ContainsKey("summary"))
+                    {
+                        Fail(name + " has no title or summary");
+                    }
+                }
+            }
+        }
+
+        static void CheckQr(Assembly asm)
+        {
+            Type qr = asm.GetType("Hd2Qd.HD2Music.QrCode");
+            if (qr == null)
+            {
+                Fail("QrCode is missing");
+                return;
+            }
+            try
+            {
+                string matrix = (string)qr.GetMethod("MakeMatrix", BindingFlags.Public | BindingFlags.Static)
+                    .Invoke(null, new object[] { "https://music.163.com/login?codekey=verify" });
+                string[] rows = matrix.Split('/');
+                if (rows.Length < 21 || rows.Any(r => r.Length != rows.Length) || rows.Any(r => r.Any(c => c != '0' && c != '1')))
+                {
+                    Fail("the QR encoder returned a ragged matrix");
+                }
+                else
+                {
+                    Pass("QR encoder embedded (QRCoder, MIT): " + rows.Length + "x" + rows.Length + " matrix, no QRCoder.dll on disk");
+                }
+            }
+            catch (Exception e)
+            {
+                Exception inner = e is TargetInvocationException tie ? tie.InnerException : e;
+                Fail("the QR encoder does not run: " + inner.Message);
+            }
+        }
+
+        static void BuildWindows(Assembly asm)
+        {
+            Type engineType = asm.GetType("Hd2Qd.HD2Music.Engine");
+            Type playerType = asm.GetType("Hd2Qd.HD2Music.PlayerView");
+            Type loginType = asm.GetType("Hd2Qd.HD2Music.LoginWindow");
+            if (engineType == null || playerType == null || loginType == null)
+            {
+                Fail("Engine, PlayerView or LoginWindow is missing");
+                return;
+            }
+            try
+            {
+                object engine = Activator.CreateInstance(engineType, Path.Combine(Path.GetTempPath(), "ffmpeg.exe"));
+
+                // the body on its own, laid out as the manager's frame would
+                var view = (FrameworkElement)Activator.CreateInstance(playerType, engine);
+                Layout(view);
+                if (!(((Control)view).Background is SolidColorBrush brush)
+                    || brush.Color != (Color)ColorConverter.ConvertFromString("#FF0C0E11"))
+                {
+                    Fail("the player view is not on the manager's ground");
+                }
+                else
+                {
+                    Pass("player view built off-screen and laid out on #0C0E11");
+                }
+
+                // the window the manager hands over (host["window"]) receives that body
+                MethodInfo show = playerType.GetMethod("Show", BindingFlags.NonPublic | BindingFlags.Static);
+                if (show == null)
+                {
+                    Fail("PlayerView.Show is missing");
+                }
+                else
+                {
+                    var made = new List<string>();
+                    Func<string, FrameworkElement, Window> frame = (title, body) =>
+                    {
+                        made.Add(title);
+                        return new Window { Title = title, Content = body, Width = 1120, Height = 760 };
+                    };
+                    var host = new Dictionary<string, object> { ["window"] = frame };
+                    var window = (Window)show.Invoke(null, new object[] { null, host, engine });
+                    if (made.Count != 1 || string.IsNullOrEmpty(window.Title) || !(window.Content is FrameworkElement body2) || body2.GetType() != playerType)
+                    {
+                        Fail("the manager's frame did not receive the player body and its title");
+                    }
+                    else
+                    {
+                        Pass("opens in the manager's frame: \"" + made[0] + "\"");
+                    }
+                    window.Close();
+                }
+
+                var login = (Window)Activator.CreateInstance(loginType, engine);
+                Layout(login);
+                Pass("login window built off-screen and laid out: \"" + login.Title + "\"");
+            }
+            catch (Exception e)
+            {
+                Exception inner = e is TargetInvocationException tie ? tie.InnerException : e;
+                Fail("a window does not build: " + inner.GetType().Name + ": " + inner.Message);
+            }
+        }
+
+        static void Layout(FrameworkElement root)
+        {
+            root.ApplyTemplate();
+            root.Measure(new Size(1120, 760));
+            root.Arrange(new Rect(0, 0, 1120, 760));
+            root.UpdateLayout();
+        }
+
+        static bool Has(Type type, string name, Type returns) =>
+            type.GetMethod(name, BindingFlags.Public | BindingFlags.Static)?.ReturnType == returns;
+
+        static void Pass(string text) => Console.WriteLine("  ok   " + text);
+
+        static int Fail(string text)
+        {
+            _failed++;
+            Console.WriteLine("  FAIL " + text);
+            return 1;
+        }
+    }
+}
