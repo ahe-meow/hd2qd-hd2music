@@ -182,7 +182,7 @@ public sealed class PlayerView : UserControl
 
 	private bool _suppressVolume;
 
-	internal const string WindowTitle = "HD2 音乐 · HD2QD";
+	internal const string WindowTitle = "HD2 音乐";
 
 	/// <summary>The body of the plugin's window, in the manager's own frame when it hands one
 	/// over (host["window"]); otherwise a plain window with the same ground and title.</summary>
