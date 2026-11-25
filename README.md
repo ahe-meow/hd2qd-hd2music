@@ -6,7 +6,7 @@ a cookie or an SMS code; browse playlists, search, the daily recommendation, pri
 and podcasts; play, seek and follow the lyrics — and the mod's in-game player, 2D/3D lyrics and
 spectrum keep working, because the plugin writes the same state files the mod's helper does.
 
-![The player in the manager's own theme](docs/window.png)
+![The console: now playing, lyrics, spectrum, next up, and the player's state](docs/window.png)
 
 ## What it does
 
@@ -25,6 +25,24 @@ spectrum keep working, because the plugin writes the same state files the mod's 
   to the manager's own window frame (`host["window"]`), and the manager's own tokens
   (Ground900/700, Grid, Ink, Muted, Yellow, Blue, Bahnschrift + YaHei UI, Ghost/Primary buttons)
   through the shared `Theme`/`Ui.xaml` component set.
+
+## The window
+
+One command bar, five views, no sidebar and no separate player strip:
+
+- **CONSOLE** — the cover, the current line and its translation with the next line under it, the
+  16-band spectrum the mod also draws in game, the transport and the volume; on the right, the
+  next five tracks and a SYSTEM panel (state, quality, order, lyrics, queue, playlist, position,
+  ffmpeg, helper lock).
+- **LIBRARY** — playlist cards as numbered tiles; **QUEUE** and **SEARCH** — two-line track tables
+  (title over artist) with the current row in yellow; **RADIO** — channels on the left, episodes
+  on the right.
+- The gear opens a settings sheet over the same window (playback, lyrics, decoder, account,
+  about); Esc closes it. The status strip along the bottom carries account, queue, quality,
+  ffmpeg and the plugin's version in mono.
+
+Cards are grid-lined ground, section labels are small caps with a yellow square, numbers are
+mono, and yellow is the only accent — the manager's own board, not a stock WPF window.
 
 ## Install
 

@@ -1,293 +1,520 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
-namespace Hd2Qd.HD2Music;
-
-public sealed class LoginWindow : Window
+namespace Hd2Qd.HD2Music
 {
-	private readonly Engine _engine;
+    /// <summary>Sign-in as one compact panel: a QR code, a cookie, or a phone and an SMS code,
+    /// each behind its own tab. No column to scroll through — the three ways are alternatives,
+    /// so only one is on screen at a time. The manager's ground, grid lines, yellow and fonts.</summary>
+    public sealed class LoginWindow : Window
+    {
+        readonly Engine _engine;
+        readonly DispatcherTimer _timer;
+        readonly DispatcherTimer _closeTimer;
+        readonly List<TabRef> _tabs = new List<TabRef>();
 
-	private readonly Image _qr = new Image();
+        Image _qr;
+        TextBlock _status;
+        TextBox _cookie;
+        TextBlock _cookieStatus;
+        TextBox _smsPhone;
+        TextBox _smsCode;
+        TextBlock _smsStatus;
+        Grid _qrPanel;
+        Grid _cookiePanel;
+        Grid _smsPanel;
+        string _tab = "qr";
+        string _matrix = "";
+        bool _closing;
 
-	private readonly TextBlock _status = new TextBlock
-	{
-		TextWrapping = TextWrapping.Wrap,
-		Margin = new Thickness(0.0, 8.0, 0.0, 8.0)
-	};
+        sealed class TabRef
+        {
+            public string Page;
+            public Border Host;
+            public TextBlock Label;
+        }
 
-	private readonly TextBox _cookie = new TextBox
-	{
-		Height = 74.0,
-		AcceptsReturn = true,
-		TextWrapping = TextWrapping.Wrap,
-		VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-		Background = Theme.Ground900,
-		Foreground = Theme.Ink,
-		BorderBrush = Theme.Grid,
-		Style = Theme.S("Input")
-	};
+        public LoginWindow(Engine engine)
+        {
+            _engine = engine;
+            Title = "登录 · HD2 音乐";
+            Width = 560.0;
+            MinHeight = 400.0;
+            MaxHeight = SystemParameters.WorkArea.Height - 80.0;
+            SizeToContent = SizeToContent.Height;
+            WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            Background = Theme.Ground900;
+            Foreground = Theme.Ink;
+            FontFamily = Theme.Font("Ui");
+            FontSize = 13.0;
 
-	private readonly TextBlock _cookieStatus = new TextBlock
-	{
-		TextWrapping = TextWrapping.Wrap,
-		Margin = new Thickness(0.0, 6.0, 0.0, 0.0)
-	};
+            Grid root = new Grid { Margin = new Thickness(22.0, 18.0, 22.0, 18.0) };
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(42.0) });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-	private readonly TextBox _smsPhone = new TextBox
-	{
-		Height = 32.0,
-		Background = Theme.Ground900,
-		Foreground = Theme.Ink,
-		BorderBrush = Theme.Grid,
-		Style = Theme.S("Input")
-	};
+            StackPanel header = new StackPanel();
+            StackPanel label = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            label.Children.Add(new Border
+            {
+                Width = 6.0,
+                Height = 6.0,
+                Background = Theme.Yellow,
+                Margin = new Thickness(0.0, 0.0, 8.0, 0.0),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            label.Children.Add(new TextBlock
+            {
+                Text = "SIGN IN",
+                FontFamily = Theme.Font("Mono"),
+                FontSize = 9.0,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = Theme.Muted
+            });
+            header.Children.Add(label);
+            header.Children.Add(new TextBlock
+            {
+                Text = "网易云账号",
+                FontSize = 22.0,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = Theme.Ink,
+                Margin = new Thickness(0.0, 4.0, 0.0, 2.0)
+            });
+            header.Children.Add(new TextBlock
+            {
+                Text = "登录状态只保存在本机。扫码、Cookie、短信验证码任选一种。",
+                FontSize = 11.0,
+                Foreground = Theme.Muted
+            });
+            root.Children.Add(header);
 
-	private readonly TextBox _smsCode = new TextBox
-	{
-		Height = 32.0,
-		Width = 160.0,
-		Background = Theme.Ground900,
-		Foreground = Theme.Ink,
-		BorderBrush = Theme.Grid,
-		Style = Theme.S("Input"),
-		Margin = new Thickness(0.0, 0.0, 8.0, 0.0)
-	};
+            StackPanel tabs = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(0.0, 10.0, 0.0, 0.0)
+            };
+            tabs.Children.Add(Tab("qr", "扫码"));
+            tabs.Children.Add(Tab("cookie", "COOKIE"));
+            tabs.Children.Add(Tab("sms", "短信"));
+            Grid.SetRow(tabs, 1);
+            root.Children.Add(tabs);
 
-	private readonly TextBlock _smsStatus = new TextBlock
-	{
-		TextWrapping = TextWrapping.Wrap,
-		Foreground = Theme.Muted,
-		Margin = new Thickness(0.0, 6.0, 0.0, 0.0)
-	};
+            Grid content = new Grid { Margin = new Thickness(0.0, 14.0, 0.0, 0.0), MinHeight = 250.0 };
+            _qrPanel = BuildQrPanel();
+            _cookiePanel = BuildCookiePanel();
+            _smsPanel = BuildSmsPanel();
+            content.Children.Add(_qrPanel);
+            content.Children.Add(_cookiePanel);
+            content.Children.Add(_smsPanel);
+            Grid.SetRow(content, 2);
+            root.Children.Add(content);
 
-	private string _matrix = "";
+            DockPanel footer = new DockPanel { LastChildFill = false, Margin = new Thickness(0.0, 16.0, 0.0, 0.0) };
+            Button web = LinkButton("在浏览器登录 music.163.com", delegate
+            {
+                try
+                {
+                    Process.Start("https://music.163.com/");
+                }
+                catch
+                {
+                }
+            });
+            footer.Children.Add(web);
+            Button close = LinkButton("关闭", delegate { Close(); });
+            DockPanel.SetDock(close, Dock.Right);
+            footer.Children.Add(close);
+            Grid.SetRow(footer, 3);
+            root.Children.Add(footer);
 
-	public LoginWindow(Engine engine)
-	{
-		_engine = engine;
-		base.Title = "网易云登录 · HD2QD.HD2Music";
-		base.Width = 440.0;
-		base.MinHeight = 520.0;
-		base.MaxHeight = SystemParameters.WorkArea.Height - 80.0;
-		base.SizeToContent = SizeToContent.Height;
-		base.WindowStartupLocation = WindowStartupLocation.CenterOwner;
-		base.Background = Theme.Ground900;
-		base.Foreground = Theme.Ink;
-		base.FontFamily = Theme.Font("Ui");
-		base.FontSize = 14.0;
-		StackPanel stackPanel = new StackPanel
-		{
-			Margin = new Thickness(20.0)
-		};
-		stackPanel.Children.Add(new TextBlock
-		{
-			Text = "扫码登录",
-			FontSize = 20.0,
-			FontWeight = FontWeights.SemiBold
-		});
-		stackPanel.Children.Add(new TextBlock
-		{
-			Text = "用网易云音乐 App 扫码并确认；登录状态会保存在本机。",
-			TextWrapping = TextWrapping.Wrap,
-			Foreground = Theme.Muted,
-			Margin = new Thickness(0.0, 4.0, 0.0, 10.0)
-		});
-		_qr.Width = 220.0;
-		_qr.Height = 220.0;
-		_qr.Stretch = Stretch.Uniform;
-		_qr.HorizontalAlignment = HorizontalAlignment.Center;
-		stackPanel.Children.Add(_qr);
-		stackPanel.Children.Add(_status);
-		WrapPanel element = new WrapPanel
-		{
-			Children = 
-			{
-				(UIElement)Button("刷新二维码", delegate
-				{
-					_engine.BeginQrLogin();
-				}),
-				(UIElement)Button("打开网易云官网", delegate
-				{
-					try
-					{
-						Process.Start("https://music.163.com/");
-					}
-					catch
-					{
-					}
-				}),
-				(UIElement)Button("取消", delegate
-				{
-					Close();
-				})
-			}
-		};
-		stackPanel.Children.Add(element);
-		stackPanel.Children.Add(new Separator
-		{
-			Margin = new Thickness(0.0, 10.0, 0.0, 8.0),
-			Background = Theme.Grid
-		});
-		stackPanel.Children.Add(new TextBlock
-		{
-			Text = "手动 Cookie（备用）",
-			FontSize = 16.0,
-			FontWeight = FontWeights.SemiBold
-		});
-		stackPanel.Children.Add(new TextBlock
-		{
-			Text = "浏览器登录 music.163.com 后，从网络请求里复制包含 MUSIC_U 的 Cookie。",
-			TextWrapping = TextWrapping.Wrap,
-			Foreground = Theme.Muted,
-			Margin = new Thickness(0.0, 4.0, 0.0, 8.0)
-		});
-		stackPanel.Children.Add(_cookie);
-		Button element2 = Button("验证并保存 Cookie", delegate
-		{
-			_engine.CookieLogin(_cookie.Text);
-		});
-		stackPanel.Children.Add(element2);
-		stackPanel.Children.Add(_cookieStatus);
-		stackPanel.Children.Add(new Separator
-		{
-			Margin = new Thickness(0.0, 10.0, 0.0, 8.0),
-			Background = Theme.Grid
-		});
-		stackPanel.Children.Add(new TextBlock
-		{
-			Text = "短信验证码登录",
-			FontSize = 16.0,
-			FontWeight = FontWeights.SemiBold
-		});
-		stackPanel.Children.Add(new TextBlock
-		{
-			Text = "手机号，例如 13800000000 或 +86 13800000000。",
-			TextWrapping = TextWrapping.Wrap,
-			Foreground = Theme.Muted,
-			Margin = new Thickness(0.0, 4.0, 0.0, 8.0)
-		});
-		stackPanel.Children.Add(_smsPhone);
-		StackPanel stackPanel2 = new StackPanel
-		{
-			Orientation = Orientation.Horizontal,
-			Margin = new Thickness(0.0, 8.0, 0.0, 0.0)
-		};
-		stackPanel2.Children.Add(_smsCode);
-		stackPanel2.Children.Add(Button("发送验证码", delegate
-		{
-			_engine.SendSms(_smsPhone.Text);
-		}));
-		stackPanel2.Children.Add(Button("验证码登录", delegate
-		{
-			_engine.SubmitSms(_smsCode.Text);
-		}));
-		stackPanel.Children.Add(stackPanel2);
-		stackPanel.Children.Add(_smsStatus);
-		base.Content = new ScrollViewer
-		{
-			Content = stackPanel,
-			VerticalScrollBarVisibility = ScrollBarVisibility.Auto
-		};
-		base.Loaded += delegate
-		{
-			_engine.BeginQrLogin();
-		};
-		DispatcherTimer timer = new DispatcherTimer
-		{
-			Interval = TimeSpan.FromMilliseconds(500.0)
-		};
-		timer.Tick += delegate
-		{
-			Update();
-		};
-		timer.Start();
-		base.Closed += delegate
-		{
-			timer.Stop();
-		};
-	}
+            Content = root;
 
-	private Button Button(string text, Action action)
-	{
-		Button button = new Button();
-		button.Content = text;
-		button.MinHeight = 34.0;
-		button.Padding = new Thickness(14.0, 0.0, 14.0, 0.0);
-		button.Margin = new Thickness(0.0, 0.0, 10.0, 8.0);
-		button.HorizontalAlignment = HorizontalAlignment.Left;
-		button.Style = Theme.S("Ghost");
-		button.Click += delegate
-		{
-			try
-			{
-				action();
-			}
-			catch
-			{
-			}
-		};
-		return button;
-	}
+            _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500.0) };
+            _timer.Tick += delegate { Update(); };
+            _closeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900.0) };
+            _closeTimer.Tick += delegate
+            {
+                _closeTimer.Stop();
+                Close();
+            };
 
-	private void Update()
-	{
-		UiState uiState = _engine.Snapshot();
-		_status.Text = (string.IsNullOrEmpty(uiState.Notice) ? "正在等待二维码…" : uiState.Notice);
-		if (uiState.QrMatrix != _matrix)
-		{
-			_matrix = uiState.QrMatrix;
-			_qr.Source = QrBitmap(_matrix);
-		}
-		_cookieStatus.Text = _engine.CookieNotice;
-		_smsStatus.Text = uiState.SmsNotice;
-	}
+            Loaded += delegate
+            {
+                ShowTab("qr");
+                _timer.Start();
+                Update();
+            };
+            Closed += delegate
+            {
+                _timer.Stop();
+                _closeTimer.Stop();
+                _engine.CancelLogin();
+            };
+            PreviewKeyDown += delegate(object sender, KeyEventArgs e)
+            {
+                if (e.Key == Key.Escape)
+                {
+                    Close();
+                }
+            };
+        }
 
-	private static BitmapSource QrBitmap(string matrix)
-	{
-		if (string.IsNullOrEmpty(matrix))
-		{
-			return null;
-		}
-		string[] array = matrix.Split('/');
-		int num = array.Length;
-		if (num == 0)
-		{
-			return null;
-		}
-		int num2 = 4;
-		int num3 = Math.Max(2, 220 / (num + num2 * 2));
-		int num4 = (num + num2 * 2) * num3;
-		int[] array2 = new int[num4 * num4];
-		for (int i = 0; i < array2.Length; i++)
-		{
-			array2[i] = -1;
-		}
-		for (int j = 0; j < num; j++)
-		{
-			string text = array[j];
-			for (int k = 0; k < num && k < text.Length; k++)
-			{
-				if (text[k] != '1')
-				{
-					continue;
-				}
-				for (int l = 0; l < num3; l++)
-				{
-					int num5 = ((j + num2) * num3 + l) * num4 + (k + num2) * num3;
-					for (int m = 0; m < num3; m++)
-					{
-						array2[num5 + m] = -16777216;
-					}
-				}
-			}
-		}
-		BitmapSource bitmapSource = BitmapSource.Create(num4, num4, 96.0, 96.0, PixelFormats.Bgra32, null, array2, num4 * 4);
-		bitmapSource.Freeze();
-		return bitmapSource;
-	}
+        FrameworkElement Tab(string page, string label)
+        {
+            TextBlock text = new TextBlock
+            {
+                Text = label,
+                FontSize = 12.0,
+                Foreground = Theme.Muted,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            Border host = new Border
+            {
+                Height = 42.0,
+                Padding = new Thickness(18.0, 0.0, 18.0, 0.0),
+                BorderThickness = new Thickness(0.0),
+                Background = Brushes.Transparent,
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0.0, 0.0, 4.0, 0.0),
+                Child = text
+            };
+            host.MouseLeftButtonUp += delegate { ShowTab(page); };
+            host.MouseEnter += delegate
+            {
+                if (_tab != page)
+                {
+                    text.Foreground = Theme.Ink;
+                }
+            };
+            host.MouseLeave += delegate
+            {
+                if (_tab != page)
+                {
+                    text.Foreground = Theme.Muted;
+                }
+            };
+            _tabs.Add(new TabRef { Page = page, Host = host, Label = text });
+            return host;
+        }
+
+        Grid BuildQrPanel()
+        {
+            Grid panel = new Grid();
+            panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(222.0) });
+            panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(22.0) });
+            panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
+
+            Grid qrHost = new Grid { Background = Theme.Ground700, ClipToBounds = true };
+            qrHost.Children.Add(new TextBlock
+            {
+                Text = "QR",
+                FontFamily = Theme.Font("Mono"),
+                FontSize = 32.0,
+                Foreground = Theme.Grid,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            _qr = new Image { Stretch = Stretch.Uniform, Margin = new Thickness(10.0) };
+            qrHost.Children.Add(_qr);
+            panel.Children.Add(new Border
+            {
+                Width = 222.0,
+                Height = 222.0,
+                BorderBrush = Theme.Grid,
+                BorderThickness = new Thickness(1.0),
+                Child = qrHost
+            });
+
+            StackPanel side = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
+            side.Children.Add(new TextBlock
+            {
+                Text = "用网易云音乐 App 扫码",
+                FontSize = 14.0,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = Theme.Ink
+            });
+            _status = new TextBlock
+            {
+                Text = "正在获取二维码…",
+                FontSize = 11.0,
+                Foreground = Theme.Muted,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0.0, 8.0, 0.0, 0.0)
+            };
+            side.Children.Add(_status);
+            side.Children.Add(new TextBlock
+            {
+                Text = "扫码后在手机上确认；登录凭证写入本机的 ncm_session.json。",
+                FontSize = 10.5,
+                Foreground = Theme.Muted,
+                TextWrapping = TextWrapping.Wrap,
+                LineHeight = 16.0,
+                Margin = new Thickness(0.0, 14.0, 0.0, 0.0)
+            });
+            Button refresh = SmallButton("刷新二维码", delegate { _engine.BeginQrLogin(); });
+            refresh.HorizontalAlignment = HorizontalAlignment.Left;
+            refresh.Margin = new Thickness(0.0, 16.0, 0.0, 0.0);
+            side.Children.Add(refresh);
+            Grid.SetColumn(side, 2);
+            panel.Children.Add(side);
+            return panel;
+        }
+
+        Grid BuildCookiePanel()
+        {
+            Grid panel = new Grid();
+            panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.0, GridUnitType.Star) });
+            panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            panel.Children.Add(new TextBlock
+            {
+                Text = "在浏览器登录 music.163.com，从开发者工具的网络请求里复制包含 MUSIC_U 的 Cookie。",
+                FontSize = 11.0,
+                Foreground = Theme.Muted,
+                TextWrapping = TextWrapping.Wrap,
+                LineHeight = 17.0,
+                Margin = new Thickness(0.0, 0.0, 0.0, 8.0)
+            });
+            _cookie = new TextBox
+            {
+                Style = Theme.S("Input"),
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.Wrap,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Height = 132.0,
+                Padding = new Thickness(10.0, 8.0, 10.0, 8.0),
+                Tag = "MUSIC_U=..."
+            };
+            Grid.SetRow(_cookie, 1);
+            panel.Children.Add(_cookie);
+            _cookieStatus = new TextBlock
+            {
+                Text = "",
+                FontSize = 11.0,
+                Foreground = Theme.Yellow,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0.0, 8.0, 0.0, 0.0)
+            };
+            Grid.SetRow(_cookieStatus, 2);
+            panel.Children.Add(_cookieStatus);
+            Button save = SmallButton("验证并保存", delegate { _engine.CookieLogin(_cookie.Text); });
+            save.HorizontalAlignment = HorizontalAlignment.Left;
+            save.Margin = new Thickness(0.0, 10.0, 0.0, 0.0);
+            panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(save, 3);
+            panel.Children.Add(save);
+            return panel;
+        }
+
+        Grid BuildSmsPanel()
+        {
+            Grid panel = new Grid();
+            panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            panel.Children.Add(new TextBlock
+            {
+                Text = "手机号可写 13800000000，或带国家码 +86 13800000000。",
+                FontSize = 11.0,
+                Foreground = Theme.Muted,
+                Margin = new Thickness(0.0, 0.0, 0.0, 8.0)
+            });
+            _smsPhone = new TextBox
+            {
+                Style = Theme.S("Input"),
+                Height = 38.0,
+                Tag = "手机号"
+            };
+            Grid.SetRow(_smsPhone, 1);
+            panel.Children.Add(_smsPhone);
+
+            Grid codeRow = new Grid { Margin = new Thickness(0.0, 10.0, 0.0, 0.0) };
+            codeRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180.0) });
+            codeRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            codeRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            _smsCode = new TextBox
+            {
+                Style = Theme.S("Input"),
+                Height = 38.0,
+                Tag = "验证码",
+                Margin = new Thickness(0.0, 0.0, 8.0, 0.0)
+            };
+            codeRow.Children.Add(_smsCode);
+            Button send = SmallButton("发送验证码", delegate { _engine.SendSms(_smsPhone.Text); });
+            Grid.SetColumn(send, 1);
+            codeRow.Children.Add(send);
+            Button submit = SmallButton("验证码登录", delegate { _engine.SubmitSms(_smsCode.Text); });
+            Grid.SetColumn(submit, 2);
+            codeRow.Children.Add(submit);
+            Grid.SetRow(codeRow, 2);
+            panel.Children.Add(codeRow);
+
+            _smsStatus = new TextBlock
+            {
+                Text = "",
+                FontSize = 11.0,
+                Foreground = Theme.Yellow,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0.0, 10.0, 0.0, 0.0)
+            };
+            Grid.SetRow(_smsStatus, 3);
+            panel.Children.Add(_smsStatus);
+            return panel;
+        }
+
+        Button SmallButton(string text, Action action)
+        {
+            Button button = new Button
+            {
+                Content = text,
+                Style = Theme.S("Ghost"),
+                Height = 32.0,
+                MinHeight = 32.0,
+                Padding = new Thickness(14.0, 0.0, 14.0, 0.0),
+                FontSize = 11.0,
+                Margin = new Thickness(0.0, 0.0, 8.0, 0.0)
+            };
+            button.Click += delegate
+            {
+                try
+                {
+                    action();
+                }
+                catch
+                {
+                }
+            };
+            return button;
+        }
+
+        Button LinkButton(string text, Action action)
+        {
+            Button button = new Button
+            {
+                Content = text,
+                Style = Theme.S("Ghost"),
+                BorderThickness = new Thickness(0.0),
+                Height = 28.0,
+                MinHeight = 28.0,
+                Padding = new Thickness(0.0, 0.0, 0.0, 0.0),
+                FontSize = 10.5,
+                Foreground = Theme.Muted
+            };
+            button.Click += delegate
+            {
+                try
+                {
+                    action();
+                }
+                catch
+                {
+                }
+            };
+            return button;
+        }
+
+        void ShowTab(string page)
+        {
+            _tab = page;
+            _qrPanel.Visibility = page == "qr" ? Visibility.Visible : Visibility.Collapsed;
+            _cookiePanel.Visibility = page == "cookie" ? Visibility.Visible : Visibility.Collapsed;
+            _smsPanel.Visibility = page == "sms" ? Visibility.Visible : Visibility.Collapsed;
+            foreach (TabRef tab in _tabs)
+            {
+                bool active = tab.Page == page;
+                tab.Label.Foreground = active ? Theme.Yellow : Theme.Muted;
+                tab.Label.TextDecorations = active ? TextDecorations.Underline : null;
+            }
+            if (page == "qr" && string.IsNullOrEmpty(_matrix) && !_closing)
+            {
+                _engine.BeginQrLogin();
+            }
+            if (page == "cookie")
+            {
+                _cookie.Focus();
+            }
+            if (page == "sms")
+            {
+                _smsPhone.Focus();
+            }
+        }
+
+        void Update()
+        {
+            UiState state = _engine.Snapshot();
+            _status.Text = state.QrResult == "success"
+                ? "登录成功"
+                : (string.IsNullOrEmpty(state.Notice) ? "正在获取二维码…" : state.Notice);
+            _cookieStatus.Text = _engine.CookieNotice;
+            _smsStatus.Text = state.SmsNotice;
+            if (state.QrMatrix != _matrix)
+            {
+                _matrix = state.QrMatrix;
+                _qr.Source = QrBitmap(_matrix);
+            }
+            if (state.QrResult == "success" && !_closing)
+            {
+                _closing = true;
+                _status.Text = "登录成功，正在返回播放器…";
+                _closeTimer.Start();
+            }
+        }
+
+        static BitmapSource QrBitmap(string matrix)
+        {
+            if (string.IsNullOrEmpty(matrix))
+            {
+                return null;
+            }
+            string[] rows = matrix.Split('/');
+            int modules = rows.Length;
+            if (modules == 0)
+            {
+                return null;
+            }
+            int quiet = 4;
+            int scale = Math.Max(2, 220 / (modules + quiet * 2));
+            int size = (modules + quiet * 2) * scale;
+            int[] pixels = new int[size * size];
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                pixels[i] = -1;
+            }
+            for (int y = 0; y < modules; y++)
+            {
+                string row = rows[y];
+                for (int x = 0; x < modules && x < row.Length; x++)
+                {
+                    if (row[x] != '1')
+                    {
+                        continue;
+                    }
+                    for (int dy = 0; dy < scale; dy++)
+                    {
+                        int at = ((y + quiet) * scale + dy) * size + (x + quiet) * scale;
+                        for (int dx = 0; dx < scale; dx++)
+                        {
+                            pixels[at + dx] = -16777216;
+                        }
+                    }
+                }
+            }
+            BitmapSource bitmap = BitmapSource.Create(size, size, 96.0, 96.0, PixelFormats.Bgra32, null, pixels, size * 4);
+            bitmap.Freeze();
+            return bitmap;
+        }
+    }
 }
