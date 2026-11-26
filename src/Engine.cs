@@ -2263,7 +2263,7 @@ public sealed class Engine : IDisposable
 			}
 			else
 			{
-				_recommendMore = "";
+				_recommendMore = "ready";
 				_recommendOffset = 0;
 				offset = 0;
 				exclude = new HashSet<string>(StringComparer.Ordinal);
@@ -2285,7 +2285,7 @@ public sealed class Engine : IDisposable
 					_recommended.AddRange(page.Rows);
 					_recommendOffset = page.Offset;
 					_recommendState = "ready";
-					_recommendMore = page.More ? "ready" : "end";
+					_recommendMore = more ? (page.More ? "ready" : "end") : "ready";
 				}
 			}
 			catch (Exception ex)

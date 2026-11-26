@@ -115,13 +115,13 @@ Elsewhere:
 
 ## Compatibility
 
-The state writer was checked field by field against `ncm_online_helper.py` 1.2.3's `publish()`:
-every row the mod uses for the current song, progress, lyrics (line, word marks, translation,
-timed world cues), queue, cover keys, playlist/recommend/radio/podcast/search lists and the
-spectrum is written. These optional in-game **paging/filter** rows are not, because this player
-loads a fixed page instead of paging: `search_more`, `search_offset`, `radio_keyword`,
-`podcast_filter`, `podcast_filter_serial`, `recommend_more`, `account_loading`. The in-game
-"load more" affordances for those lists therefore do nothing; everything else matches.
+The state writer is checked field by field against `ncm_online_helper.py` 1.2.3's `publish()`:
+current song, progress, lyrics (line, word marks, translation, timed world cues), queue, cover
+keys, playlist/recommend/radio/podcast/search lists, spectrum, and the paging/filter rows
+`search_more`, `search_offset`, `radio_keyword`, `podcast_filter`, `podcast_filter_serial`,
+`recommend_more` and `account_loading` are all written. The game-side "load more" affordances
+therefore work. The tab also exposes 每日推荐, 私人 FM, STOP, radio search and podcast filter,
+plus a verification-state website link and a karaoke prefix preview in the lyric panel.
 
 The player also refuses to play when the mod's heartbeat (`ncm_game_alive.txt`) is absent, which
 is the mod's own rule: start the game, deploy HD2 Music, keep the manager running.
@@ -157,7 +157,7 @@ the fallback window and the login window off-screen. It needs no game, network o
 Current output:
 
 ```
-  ok   assembly name HD2QD.HD2Music, version 1.3.0
+  ok   assembly name HD2QD.HD2Music, version 1.4.0
   ok   target framework .NETFramework,Version=v4.8
   ok   Api = 2 (a const the manager reads before running any code)
   ok   Kind = window
@@ -222,8 +222,8 @@ MIT — see [LICENSE](LICENSE).
 - 插件与 Python 助手共用 `ncm_helper.lock`，同一时间只有一个解码。助手已在运行（F7 播放）时，
   插件会把点击的播放/切歌/音量/音质等命令写进 `ncm_cmd_*.txt` 转交助手执行；状态栏显示
   “在线助手已接管播放”，标题、进度、歌词从助手状态同步。插件占锁时不写状态与频谱。
-- 状态字段与助手 1.2.3 的 `publish()` 逐项对照；游戏内“加载更多”相关的分页字段未写入，
-  其余当前歌曲、歌词、队列、封面、频谱均一致。
+- 状态字段与助手 1.2.3 的 `publish()` 逐项对照，含游戏内分页/筛选字段：`search_more`、`search_offset`、`radio_keyword`、`podcast_filter`、`podcast_filter_serial`、`recommend_more`、`account_loading`；“加载更多/筛选”可用。
+- 插件页新增每日推荐、私人 FM、STOP、电台搜索、播客筛选；扫码需要安全验证时显示“打开官网”；歌词面板显示逐字高亮预览。
 
 构建：`build.bat`，同时产出 `release\HD2QD.HD2Music.dll`（完整版）与 `release\HD2QD.HD2Music-Lite.dll`（精简版），并分别运行 `tests\Verify.exe` 检查契约、
 资源、依赖与窗口构造。
