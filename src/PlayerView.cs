@@ -462,7 +462,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.5.1 · " + (Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.5.2 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1814,7 +1814,7 @@ namespace Hd2Qd.HD2Music
                 _lyricPrefixLine.Inlines.Add(new Run(whole.Substring(prefix.Length)) { Foreground = Theme.Muted });
             }
             _translation.Text = hasLyric ? state.Translation : "";
-            _next.Text = hasLyric && !string.IsNullOrEmpty(state.NextLyric) ? "NEXT   " + state.NextLyric : "";
+            _next.Text = hasLyric && !string.IsNullOrEmpty(state.NextLyric) ? I18n.Text("NEXT   ") + state.NextLyric : "";
             _notice.Text = I18n.Text(state.Notice ?? "");
 
             SetImage(state.CoverUrl);
@@ -1842,7 +1842,7 @@ namespace Hd2Qd.HD2Music
             _sysState.Text = I18n.Text(stateName);
             _sysState.Foreground = state.State == "playing" ? Theme.Yellow : Theme.Ink;
             _sysLyrics.Text = state.LyricsEnabled ? "ON" : "OFF";
-            _sysQueue.Text = state.Count + " TRACKS";
+            _sysQueue.Text = state.Count + I18n.Text(" TRACKS");
             _sysPlaylist.Text = string.IsNullOrEmpty(state.PlaylistName) ? "—" : state.PlaylistName;
             _sysTrack.Text = Math.Max(0, state.Index + 1) + " / " + state.Count;
             _sysFfmpeg.Text = File.Exists(_engine.FfmpegPath) ? "READY" : "MISSING";
@@ -1861,7 +1861,7 @@ namespace Hd2Qd.HD2Music
             RefreshSearch(state);
             RefreshRadio(state);
 
-            _statusAccount.Text = "ACCOUNT " + (string.IsNullOrEmpty(state.Account) ? "—" : state.Account);
+            _statusAccount.Text = I18n.Text("ACCOUNT ") + (string.IsNullOrEmpty(state.Account) ? "—" : state.Account);
             string reason = state.Notice;
             if (string.IsNullOrWhiteSpace(reason))
             {
@@ -1878,14 +1878,14 @@ namespace Hd2Qd.HD2Music
                 // "已读取歌单，选择歌曲播放" alone hid the real reason a click does nothing
                 reason = "未启动游戏 · " + reason;
             }
-            _statusNotice.Text = "STATUS " + I18n.Text(reason);
+            _statusNotice.Text = I18n.Text("STATUS ") + I18n.Text(reason);
             bool busy = state.State == "loading" || state.State == "buffering" || reason.Contains("正在");
             bool blocked = NoticeTakesPrecedence(reason);
             _statusNotice.Foreground = (busy || blocked || !state.GameRunning || reason.Contains("游戏")) ? Theme.Yellow : Theme.Muted;
-            _statusQueue.Text = "QUEUE " + state.Count;
-            _statusQuality.Text = "QUALITY " + state.Quality.ToUpperInvariant();
+            _statusQueue.Text = I18n.Text("QUEUE ") + state.Count;
+            _statusQuality.Text = I18n.Text("QUALITY ") + I18n.Text(state.Quality.ToUpperInvariant());
             bool ffmpegReady = File.Exists(_engine.FfmpegPath);
-            _statusFfmpeg.Text = "FFMPEG " + (ffmpegReady ? "OK" : "MISSING");
+            _statusFfmpeg.Text = I18n.Text("FFMPEG ") + I18n.Text(ffmpegReady ? "OK" : "MISSING");
             _statusFfmpeg.Foreground = ffmpegReady ? Theme.Muted : Theme.Yellow;
         }
 
