@@ -428,7 +428,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.1.0",
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.1.1",
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1438,7 +1438,7 @@ namespace Hd2Qd.HD2Music
             body.Children.Add(links);
             body.Children.Add(new TextBlock
             {
-                Text = "插件 HD2QD.HD2Music 1.1.0 · MIT",
+                Text = "插件 HD2QD.HD2Music 1.1.1 · MIT",
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1881,7 +1881,8 @@ namespace Hd2Qd.HD2Music
             _queue.Items.Clear();
             for (int i = 0; i < state.Queue.Count; i++)
             {
-                _queue.Items.Add(TrackRow(i, state.Queue[i], i == state.Index, delegate { PlayQueueAt(i); }));
+                int at = i;
+                _queue.Items.Add(TrackRow(i, state.Queue[i], i == state.Index, delegate { PlayQueueAt(at); }));
             }
             _queueEmpty.Visibility = state.Queue.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -1900,7 +1901,8 @@ namespace Hd2Qd.HD2Music
             _results.Items.Clear();
             for (int i = 0; i < state.SearchResults.Count; i++)
             {
-                _results.Items.Add(TrackRow(i, state.SearchResults[i], false, delegate { _engine.SearchPlay(i); }));
+                int at = i;
+                _results.Items.Add(TrackRow(i, state.SearchResults[i], false, delegate { _engine.SearchPlay(at); }));
             }
             _searchEmpty.Visibility = state.SearchResults.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             _searchEmpty.Text = state.SearchState == "loading" ? "正在搜索…" : "输入关键词，结果会按歌曲列出。";
