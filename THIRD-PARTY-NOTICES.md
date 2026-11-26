@@ -6,7 +6,7 @@ it; their licences are their own.
 ## FFmpeg 6.1.1-essentials_build
 
 - File: `assets/ffmpeg.exe.gz` (gzip of `ffmpeg.exe`, 78.7 MB extracted), embedded in the
-  plugin DLL as `ffmpeg.exe.gz` and written out on first use by `src/Ffmpeg.cs`.
+  plugin DLL (the **Full** build) as `ffmpeg.exe.gz` and written out on first use by `src/Ffmpeg.cs`; the **Lite** build does not carry it.
 - Build: `ffmpeg version 6.1.1-essentials_build-www.gyan.dev`, Copyright (c) 2000-2023 the
   FFmpeg developers, built with gcc 12.2.0 (MSYS2), `--enable-gpl --enable-version3`, a GPLv3
   build.
