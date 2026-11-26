@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -39,6 +40,8 @@ namespace Hd2Qd.HD2Music
         TextBlock _meta;
         TextBlock _previous;
         TextBlock _lyric;
+
+        TextBlock _lyricPrefixLine;
         TextBlock _translation;
         TextBlock _next;
         TextBlock _notice;
@@ -634,6 +637,15 @@ namespace Hd2Qd.HD2Music
                 Margin = new Thickness(0.0, 6.0, 0.0, 4.0)
             };
             lyrics.Children.Add(_lyric);
+            _lyricPrefixLine = new TextBlock
+            {
+                Text = "",
+                FontSize = 12.0,
+                FontFamily = Theme.Font("Mono"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0.0, 0.0, 0.0, 4.0)
+            };
+            lyrics.Children.Add(_lyricPrefixLine);
             _translation = new TextBlock
             {
                 Text = "",
@@ -1703,6 +1715,17 @@ namespace Hd2Qd.HD2Music
                 _lyric.Foreground = Theme.Ink;
             }
             _previous.Text = hasLyric ? state.PreviousLyric : "";
+            string prefix = hasLyric ? (state.LyricPrefix ?? "") : "";
+            string whole = hasLyric ? (state.Lyric ?? "") : "";
+            _lyricPrefixLine.Inlines.Clear();
+            if (prefix.Length > 0)
+            {
+                _lyricPrefixLine.Inlines.Add(new Run(prefix) { Foreground = Theme.Yellow });
+            }
+            if (whole.Length > prefix.Length)
+            {
+                _lyricPrefixLine.Inlines.Add(new Run(whole.Substring(prefix.Length)) { Foreground = Theme.Muted });
+            }
             _translation.Text = hasLyric ? state.Translation : "";
             _next.Text = hasLyric && !string.IsNullOrEmpty(state.NextLyric) ? "NEXT   " + state.NextLyric : "";
             _notice.Text = state.Notice ?? "";

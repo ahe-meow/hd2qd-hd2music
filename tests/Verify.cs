@@ -78,6 +78,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckBrowseApi(asm);
             CheckBrowseState(asm);
             CheckBrowseUi(asm);
+            CheckVerificationUi(asm);
             CheckQueuePersistence(asm);
             CheckTab(asm, engineOf(asm));
             BuildWindows(asm);
@@ -451,6 +452,23 @@ namespace Hd2Qd.HD2Music.Verify
                 }
             }
             Pass("browse UI entries present");
+        }
+
+        static void CheckVerificationUi(Assembly asm)
+        {
+            Type login = asm.GetType("Hd2Qd.HD2Music.LoginWindow");
+            if (login.GetField("_openWebsiteButton", BindingFlags.Instance | BindingFlags.NonPublic) == null)
+            {
+                Fail("LoginWindow._openWebsiteButton is missing");
+                return;
+            }
+            Type player = asm.GetType("Hd2Qd.HD2Music.PlayerView");
+            if (player.GetField("_lyricPrefixLine", BindingFlags.Instance | BindingFlags.NonPublic) == null)
+            {
+                Fail("PlayerView._lyricPrefixLine is missing");
+                return;
+            }
+            Pass("verification link and lyric prefix preview present");
         }
 
         static void CheckQueuePersistence(Assembly asm)
