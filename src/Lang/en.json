@@ -337,5 +337,7 @@
   "Hi-Res": "Hi-Res",
   "QUALITY ": "QUALITY ",
   "音质 ": "QUALITY ",
-  "FFMPEG": "FFMPEG"
+  "FFMPEG": "FFMPEG",
+  "RADIO / PODCAST": "RADIO / PODCAST",
+  "电台 / 播客": "RADIO / PODCAST"
 }
