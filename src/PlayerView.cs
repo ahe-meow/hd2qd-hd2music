@@ -88,6 +88,10 @@ namespace Hd2Qd.HD2Music
         TextBox _podcastFilter;
 
         Button _podcastFilterButton;
+
+        StackPanel _languageMode;
+
+        string _appliedLang = "";
         ListBox _results;
         TextBlock _searchEmpty;
         TextBlock _searchHint;
@@ -124,9 +128,14 @@ namespace Hd2Qd.HD2Music
         LoginWindow _login;
         Window _window;
 
-        public PlayerView(Engine engine)
+        public PlayerView(Engine engine) : this(engine, null)
+        {
+        }
+
+        public PlayerView(Engine engine, string hostLang)
         {
             _engine = engine;
+            I18n.SetHostLang(hostLang);
             Background = Theme.Ground900;
             Foreground = Theme.Ink;
             FontFamily = Theme.Font("Ui");
@@ -155,6 +164,7 @@ namespace Hd2Qd.HD2Music
             root.Children.Add(_overlay);
 
             Content = root;
+            ApplyLanguage();
 
             _tick = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300.0) };
             _tick.Tick += delegate { Refresh(); };
@@ -445,7 +455,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.4.1 · " + (Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.5.0 · " + (Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1485,6 +1495,25 @@ namespace Hd2Qd.HD2Music
             _automixTick.Unchecked += delegate { _engine.SetAutomix(enabled: false); };
             body.Children.Add(SettingRow("顺播", _automixTick));
 
+            _languageMode = new StackPanel { Orientation = Orientation.Horizontal };
+            foreach (string mode in new[] { I18n.Follow, I18n.Chinese, I18n.English })
+            {
+                string captured = mode;
+                Button option = GhostButton(
+                    mode == I18n.Follow ? "跟随 HD2QD" : (mode == I18n.Chinese ? "强制中文" : "强制 English"),
+                    delegate
+                    {
+                        I18n.Mode = captured;
+                        MarkLanguageMode();
+                        ApplyLanguage();
+                        Refresh();
+                    });
+                option.Tag = mode;
+                _languageMode.Children.Add(option);
+            }
+            MarkLanguageMode();
+            body.Children.Add(SettingRow("语言", _languageMode));
+
             body.Children.Add(SheetSection("DECODER"));
             StackPanel ffmpegRow = new StackPanel { Orientation = Orientation.Horizontal };
             _ffmpeg = new TextBlock
@@ -1555,7 +1584,8 @@ namespace Hd2Qd.HD2Music
             body.Children.Add(links);
             body.Children.Add(new TextBlock
             {
-                Text = "插件 HD2QD.HD2Music 1.4.1 · " + (Ffmpeg.Embedded ? "内置解码器" : "外置解码器") + " · MIT",
+                Text = "HD2QD.HD2Music " + typeof(Plugin).Assembly.GetName().Version.ToString(3) + " · "
+                    + I18n.Text(Ffmpeg.Embedded ? "内置解码器" : "外置解码器") + " · MIT",
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1720,6 +1750,10 @@ namespace Hd2Qd.HD2Music
             try
             {
                 RefreshCore();
+                // page controls and dynamic labels are built/updated during RefreshCore;
+                // translate afterwards so newly added controls are covered too
+                I18n.Apply(this);
+                _appliedLang = I18n.CurrentLang;
             }
             catch
             {
@@ -1738,7 +1772,7 @@ namespace Hd2Qd.HD2Music
             _accountButton.Content = account;
             _accountButton.ToolTip = string.IsNullOrEmpty(state.Account) ? "登录网易云" : "账号：" + state.Account + "（点击切换）";
 
-            _title.Text = string.IsNullOrEmpty(state.Title) ? "未选歌曲" : state.Title;
+            _title.Text = string.IsNullOrEmpty(state.Title) ? I18n.Text("未选歌曲") : state.Title;
             _artist.Text = state.Artist ?? "";
             _meta.Text = (string.IsNullOrEmpty(state.PlaylistName) ? "—" : state.PlaylistName)
                 + "   ·   " + Math.Max(0, state.Index + 1) + "/" + state.Count;
@@ -1746,7 +1780,7 @@ namespace Hd2Qd.HD2Music
             bool hasLyric = !string.IsNullOrEmpty(state.Lyric);
             if (!hasLyric)
             {
-                _lyric.Text = state.State == "playing" || state.State == "paused" ? "暂无歌词" : "未在播放";
+                _lyric.Text = I18n.Text(state.State == "playing" || state.State == "paused" ? "暂无歌词" : "未在播放");
                 _lyric.FontSize = 13.0;
                 _lyric.Foreground = Theme.Muted;
             }
@@ -1770,7 +1804,7 @@ namespace Hd2Qd.HD2Music
             }
             _translation.Text = hasLyric ? state.Translation : "";
             _next.Text = hasLyric && !string.IsNullOrEmpty(state.NextLyric) ? "NEXT   " + state.NextLyric : "";
-            _notice.Text = state.Notice ?? "";
+            _notice.Text = I18n.Text(state.Notice ?? "");
 
             SetImage(state.CoverUrl);
             if (!_draggingProgress)
@@ -1789,12 +1823,12 @@ namespace Hd2Qd.HD2Music
             MarkSegments(_orderSegments, state.Order);
             _lyricsTick.IsChecked = state.LyricsEnabled;
             _automixTick.IsChecked = state.Automix;
-            _ffmpeg.Text = (Ffmpeg.Embedded ? "内置 · " : "外置 · ") + _engine.FfmpegPath;
+            _ffmpeg.Text = I18n.Text(Ffmpeg.Embedded ? "内置 · " : "外置 · ") + _engine.FfmpegPath;
             _ffmpeg.Foreground = File.Exists(_engine.FfmpegPath) ? Theme.Muted : Theme.Yellow;
-            _sheetAccount.Text = string.IsNullOrEmpty(state.Account) ? "未登录" : state.Account;
-            _sheetLock.Text = _engine.IsLockedOut ? "网易云在线助手已在运行：点击播放会转交助手；本插件不写状态文件。" : "";
+            _sheetAccount.Text = string.IsNullOrEmpty(state.Account) ? I18n.Text("未登录") : state.Account;
+            _sheetLock.Text = _engine.IsLockedOut ? I18n.Text("网易云在线助手已在运行：点击播放会转交助手；本插件不写状态文件。") : "";
 
-            _sysState.Text = stateName;
+            _sysState.Text = I18n.Text(stateName);
             _sysState.Foreground = state.State == "playing" ? Theme.Yellow : Theme.Ink;
             _sysLyrics.Text = state.LyricsEnabled ? "ON" : "OFF";
             _sysQueue.Text = state.Count + " TRACKS";
@@ -1833,7 +1867,7 @@ namespace Hd2Qd.HD2Music
                 // "已读取歌单，选择歌曲播放" alone hid the real reason a click does nothing
                 reason = "未启动游戏 · " + reason;
             }
-            _statusNotice.Text = "STATUS " + reason;
+            _statusNotice.Text = "STATUS " + I18n.Text(reason);
             bool busy = state.State == "loading" || state.State == "buffering" || reason.Contains("正在");
             bool blocked = NoticeTakesPrecedence(reason);
             _statusNotice.Foreground = (busy || blocked || !state.GameRunning || reason.Contains("游戏")) ? Theme.Yellow : Theme.Muted;
@@ -1993,6 +2027,22 @@ namespace Hd2Qd.HD2Music
                 ShowPage("queue");
             };
             return card;
+        }
+
+        void MarkLanguageMode()
+        {
+            if (_languageMode == null) return;
+            foreach (Button button in _languageMode.Children.OfType<Button>())
+            {
+                button.Foreground = (string)button.Tag == I18n.Mode ? Theme.Yellow : Theme.Muted;
+            }
+        }
+
+        void ApplyLanguage()
+        {
+            string lang = I18n.CurrentLang;
+            I18n.Apply(this);
+            _appliedLang = lang;
         }
 
         static bool NoticeTakesPrecedence(string notice)

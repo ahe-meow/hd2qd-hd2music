@@ -79,6 +79,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckBrowseState(asm);
             CheckBrowseUi(asm);
             CheckVerificationUi(asm);
+            CheckI18n(asm);
             CheckQueuePersistence(asm);
             CheckTab(asm, engineOf(asm));
             BuildWindows(asm);
@@ -469,6 +470,21 @@ namespace Hd2Qd.HD2Music.Verify
                 return;
             }
             Pass("verification link and lyric prefix preview present");
+        }
+
+        static void CheckI18n(Assembly asm)
+        {
+            Type i18n = asm.GetType("Hd2Qd.HD2Music.I18n");
+            if (i18n == null) { Fail("I18n is missing"); return; }
+            foreach (string method in new[] { "SetHostLang", "Apply", "Text" })
+                if (i18n.GetMethod(method, BindingFlags.Public | BindingFlags.Static) == null)
+                { Fail("I18n." + method + " is missing"); return; }
+            if (i18n.GetProperty("Mode", BindingFlags.Public | BindingFlags.Static) == null)
+            { Fail("I18n.Mode is missing"); return; }
+            Type player = asm.GetType("Hd2Qd.HD2Music.PlayerView");
+            if (player.GetField("_languageMode", BindingFlags.Instance | BindingFlags.NonPublic) == null)
+            { Fail("PlayerView._languageMode is missing"); return; }
+            Pass("bilingual UI infrastructure present");
         }
 
         static void CheckQueuePersistence(Assembly asm)

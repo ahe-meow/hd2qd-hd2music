@@ -120,7 +120,9 @@ current song, progress, lyrics (line, word marks, translation, timed world cues)
 keys, playlist/recommend/radio/podcast/search lists, spectrum, and the paging/filter rows
 `search_more`, `search_offset`, `radio_keyword`, `podcast_filter`, `podcast_filter_serial`,
 `recommend_more` and `account_loading` are all written. The game-side "load more" affordances
-therefore work. The tab also exposes 每日推荐, 私人 FM, STOP, radio search and podcast filter,
+therefore work. The interface is bilingual. Settings → 语言 offers 跟随 HD2QD / 强制中文 / 强制 English;
+"follow" tracks the manager's language, and the choice is stored in `ncm_language.txt`.
+The tab also exposes 每日推荐, 私人 FM, STOP, radio search and podcast filter,
 plus a verification-state website link and a karaoke prefix preview in the lyric panel.
 
 The player also refuses to play when the mod's heartbeat (`ncm_game_alive.txt`) is absent, which
@@ -157,7 +159,7 @@ the fallback window and the login window off-screen. It needs no game, network o
 Current output:
 
 ```
-  ok   assembly name HD2QD.HD2Music, version 1.4.1
+  ok   assembly name HD2QD.HD2Music, version 1.5.0
   ok   target framework .NETFramework,Version=v4.8
   ok   Api = 2 (a const the manager reads before running any code)
   ok   Kind = window
@@ -223,6 +225,7 @@ MIT — see [LICENSE](LICENSE).
   插件会把点击的播放/切歌/音量/音质等命令写进 `ncm_cmd_*.txt` 转交助手执行；状态栏显示
   “在线助手已接管播放”，标题、进度、歌词从助手状态同步。插件占锁时不写状态与频谱。
 - 状态字段与助手 1.2.3 的 `publish()` 逐项对照，含游戏内分页/筛选字段：`search_more`、`search_offset`、`radio_keyword`、`podcast_filter`、`podcast_filter_serial`、`recommend_more`、`account_loading`；“加载更多/筛选”可用。
+- 界面中英双语；设置页“语言”可选“跟随 HD2QD / 强制中文 / 强制 English”，选择保存在 `ncm_language.txt`；默认跟随管理器语言。
 - 插件页新增每日推荐、私人 FM、STOP、电台搜索、播客筛选；扫码需要安全验证时显示“打开官网”；歌词面板显示逐字高亮预览。
 
 构建：`build.bat`，同时产出 `release\HD2QD.HD2Music.dll`（完整版）与 `release\HD2QD.HD2Music-Lite.dll`（精简版），并分别运行 `tests\Verify.exe` 检查契约、

@@ -139,6 +139,7 @@ namespace Hd2Qd.HD2Music
             root.Children.Add(footer);
 
             Content = root;
+            I18n.Apply(this);
 
             _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500.0) };
             _timer.Tick += delegate { Update(); };
@@ -456,10 +457,11 @@ namespace Hd2Qd.HD2Music
 
         void Update()
         {
+            I18n.Apply(this);
             UiState state = _engine.Snapshot();
-            _status.Text = state.QrResult == "success"
+            _status.Text = I18n.Text(state.QrResult == "success"
                 ? "登录成功"
-                : (string.IsNullOrEmpty(state.Notice) ? "正在获取二维码…" : state.Notice);
+                : (string.IsNullOrEmpty(state.Notice) ? "正在获取二维码…" : state.Notice));
             bool verify = state.QrResult == "verification";
             _openWebsiteButton.Content = verify ? "打开官网 · 完成安全验证" : "在浏览器登录 music.163.com";
             _openWebsiteButton.Foreground = verify ? Theme.Yellow : Theme.Muted;
