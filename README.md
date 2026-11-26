@@ -57,15 +57,17 @@ mono, and yellow is the only accent — the manager's own board, not a stock WPF
    | File | Size | Decoder |
    |---|---:|---|
    | `HD2QD.HD2Music.dll` | ~29 MB | **Full**: FFmpeg 6.1.1 is inside the DLL and written out once on first use; zero setup. |
-   | `HD2QD.HD2Music-Lite.dll` | ~340 KB | **Lite**: uses an `ffmpeg.exe` found through `HD2MUSIC_FFMPEG`, `ncm_ffmpeg.txt`, the plugin folder, `%LOCALAPPDATA%\HD2Phone`, or the mod helper's `tools` folder. |
+   | `HD2QD.HD2Music-Lite.dll` | ~340 KB | **Lite**: finds `ffmpeg.exe` through `HD2MUSIC_FFMPEG`, `ncm_ffmpeg.txt`, the plugin folder, `%LOCALAPPDATA%\HD2Phone`, the mod helper's `tools` folder, **`PATH`**, **App Paths in the registry**, or winget/scoop/chocolatey locations. |
 
 3. **Plugins** page → **Add plugin…** → the chosen file (or drop it on the page).
 4. Deploy **HD2 Music** in Arsenal, start the game, then open **HD2 Music** on the Plugins page;
    it appears as a tab beside the manager, and a second Open shows that same tab.
 
 The Full build extracts FFmpeg (78.7 MB) next to the plugin, or into the settings folder if that
-is not writable, and checks its SHA-256. The Lite build never writes a decoder; if none is found,
-the status strip says `FFMPEG MISSING` and the **设置** page can point at one. `HD2MUSIC_FFMPEG`
+is not writable, and checks its SHA-256. The Lite build never writes a decoder; besides the paths
+above it checks the `PATH` entries, the `App Paths\ffmpeg.exe` registration in HKCU/HKLM (both
+registry views), and the usual winget, scoop and chocolatey locations. If none is found, the
+status strip says `FFMPEG MISSING` and the **设置** page can point at one. `HD2MUSIC_FFMPEG`
 overrides both.
 
 The plugin and the mod's Python helper (`网易云在线助手`) **cannot run at the same time**: both
@@ -145,7 +147,7 @@ the fallback window and the login window off-screen. It needs no game, network o
 Current output:
 
 ```
-  ok   assembly name HD2QD.HD2Music, version 1.1.2
+  ok   assembly name HD2QD.HD2Music, version 1.1.3
   ok   target framework .NETFramework,Version=v4.8
   ok   Api = 2 (a const the manager reads before running any code)
   ok   Kind = window
@@ -204,7 +206,7 @@ MIT — see [LICENSE](LICENSE).
 
 - 安装：管理器 0.25.0 以上 → 插件页 → 添加**其中一个**文件；以标签页打开，再次“打开”会回到同一页签。旧版 0.15.0–0.24.x 回退为独立窗口。
   - `HD2QD.HD2Music.dll`：完整版，约 29 MB，内置 FFmpeg，首次启动自动释放。
-  - `HD2QD.HD2Music-Lite.dll`：精简版，约 340 KB，使用已有的 `ffmpeg.exe`（助手 tools、插件目录、设置页或 `HD2MUSIC_FFMPEG`）。两个版本不要同时安装。
+  - `HD2QD.HD2Music-Lite.dll`：精简版，约 340 KB，自动查找 `ffmpeg.exe`：环境变量、设置页、助手 tools、插件目录、**PATH**、注册表 **App Paths**，以及 winget/scoop/chocolatey 常见位置。两个版本不要同时安装。
 - 插件与压缩包里的 Python 助手**不能同时运行**（共用 `ncm_helper.lock`）；插件只在打开窗口或
   执行命令时才占锁，不会在管理器启动时抢占。
 - 状态字段与助手 1.2.3 的 `publish()` 逐项对照；游戏内“加载更多”相关的分页字段未写入，

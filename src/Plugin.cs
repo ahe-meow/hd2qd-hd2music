@@ -247,6 +247,11 @@ namespace Hd2Qd.HD2Music
         /// assumed about someone's disks beyond the manager's own folders.</summary>
         static string FindFfmpeg(Dictionary<string, object> host)
         {
+            string resolved = Ffmpeg.Ensure();
+            if (!string.IsNullOrEmpty(resolved))
+            {
+                return resolved;
+            }
             string home = (host != null && host.TryGetValue("home", out object h)) ? h as string : null;
             string saved = Util.ReadText(Path.Combine(Util.Root, "ncm_ffmpeg.txt"))?.Trim();
             var candidates = new List<string>

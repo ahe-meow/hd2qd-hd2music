@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
+using Microsoft.Win32;
 
 namespace Hd2Qd.HD2Music
 {
@@ -132,6 +133,165 @@ namespace Hd2Qd.HD2Music
             yield return Path.Combine(Util.PluginDir, "tools", "ffmpeg.exe");
             yield return Path.Combine(Util.Root, "ffmpeg.exe");
             yield return Path.Combine(Util.Root, "tools", "ffmpeg.exe");
+            foreach (string candidate in WindowsCandidates())
+            {
+                yield return candidate;
+            }
+        }
+
+        /// <summary>FFmpeg installed by winget, scoop or chocolatey, a manual unzip in the
+        /// usual places, a PATH entry, and the App Paths registration Windows uses for
+        /// "ffmpeg" typed in Run. Only files that look like a decoder (not a 0-byte app
+        /// execution alias) are offered.</summary>
+        static IEnumerable<string> WindowsCandidates()
+        {
+            foreach (string candidate in PathCandidates())
+            {
+                yield return candidate;
+            }
+            foreach (string candidate in AppPathCandidates())
+            {
+                yield return candidate;
+            }
+            foreach (string candidate in CommonCandidates())
+            {
+                yield return candidate;
+            }
+        }
+
+        static IEnumerable<string> PathCandidates()
+        {
+            string path = Environment.GetEnvironmentVariable("PATH");
+            if (string.IsNullOrEmpty(path))
+            {
+                yield break;
+            }
+            foreach (string part in path.Split(';'))
+            {
+                string folder = Environment.ExpandEnvironmentVariables(part.Trim().Trim('"'));
+                if (folder.Length == 0)
+                {
+                    continue;
+                }
+                string candidate = Path.Combine(folder, "ffmpeg.exe");
+                if (Usable(candidate))
+                {
+                    yield return candidate;
+                }
+            }
+        }
+
+        static IEnumerable<string> AppPathCandidates()
+        {
+            RegistryHive[] hives = { RegistryHive.CurrentUser, RegistryHive.LocalMachine };
+            RegistryView[] views = { RegistryView.Registry64, RegistryView.Registry32 };
+            foreach (RegistryHive hive in hives)
+            {
+                foreach (RegistryView view in views)
+                {
+                    string candidate = null;
+                    try
+                    {
+                        using (RegistryKey root = RegistryKey.OpenBaseKey(hive, view))
+                        using (RegistryKey key = root.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\ffmpeg.exe"))
+                        {
+                            if (key != null)
+                            {
+                                candidate = CleanExecutable(Convert.ToString(key.GetValue(null)));
+                            }
+                        }
+                    }
+                    catch
+                    {
+                    }
+                    if (Usable(candidate))
+                    {
+                        yield return candidate;
+                    }
+                }
+            }
+        }
+
+        static IEnumerable<string> CommonCandidates()
+        {
+            string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            string user = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string common = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+            string choco = Environment.GetEnvironmentVariable("ChocolateyInstall");
+            var folders = new List<string>
+            {
+                Path.Combine(programFiles, "ffmpeg", "bin"),
+                Path.Combine(programFiles, "ffmpeg"),
+                Path.Combine(programFilesX86, "ffmpeg", "bin"),
+                Path.Combine(programFilesX86, "ffmpeg"),
+                Path.Combine(user, "ffmpeg", "bin"),
+                Path.Combine(user, "ffmpeg"),
+                Path.Combine(user, "scoop", "shims"),
+                Path.Combine(local, "Microsoft", "WinGet", "Links"),
+                Path.Combine(user, "AppData", "Local", "Microsoft", "WinGet", "Links"),
+                Path.Combine(roaming, "Microsoft", "Windows", "Start Menu", "Programs"),
+                Path.Combine(common, "chocolatey", "bin"),
+                string.IsNullOrEmpty(choco) ? null : Path.Combine(choco, "bin"),
+                @"C:\ffmpeg\bin",
+            };
+            foreach (string folder in folders)
+            {
+                if (string.IsNullOrEmpty(folder))
+                {
+                    continue;
+                }
+                string candidate = Path.Combine(folder, "ffmpeg.exe");
+                if (Usable(candidate))
+                {
+                    yield return candidate;
+                }
+            }
+        }
+
+        static string CleanExecutable(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+            string text = Environment.ExpandEnvironmentVariables(value.Trim());
+            if (text.StartsWith("\"", StringComparison.Ordinal))
+            {
+                int end = text.IndexOf('"', 1);
+                if (end > 1)
+                {
+                    text = text.Substring(1, end - 1);
+                }
+            }
+            else
+            {
+                int exe = text.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+                if (exe > 0)
+                {
+                    text = text.Substring(0, exe + 4);
+                }
+            }
+            return text.Trim();
+        }
+
+        static bool Usable(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+            try
+            {
+                var info = new FileInfo(path);
+                return info.Exists && info.Length > 1024L * 1024L;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         static IEnumerable<string> Targets()
