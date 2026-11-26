@@ -52,6 +52,11 @@ internal static class Util
 		return Serializer.DeserializeObject(text);
 	}
 
+	public static T Parse<T>(string text)
+	{
+		return Serializer.Deserialize<T>(text);
+	}
+
 	public static string Serialize(object value)
 	{
 		return Serializer.Serialize(value);

@@ -95,6 +95,7 @@ Under `%LOCALAPPDATA%\HD2Phone`:
 | `ncm_cover_preview.dat`, `ncm_cover_texture.dat`, `ncm_mini_cover.dat` | Cover art for the mod (360/200/80 px paths). |
 | `ncm_recommend_*.dat` | Recommended-playlist cover tiles, at most 24 kept. |
 | `ncm_session.json` | The NetEase cookies; written only when you sign in. |
+| `ncm_queue.json` | The current playlist and selected row, kept between manager launches. Cleared when the account changes, the saved login fails, or the session is gone; choosing another playlist replaces it. |
 | `ncm_pending_login.json` | The QR login session while a QR is on screen. |
 | `ncm_lyrics_enabled.txt`, `ncm_quality.txt`, `ncm_order.txt`, `ncm_automix.txt`, `ncm_ffmpeg.txt` | The plugin's own settings, the same names the helper uses. |
 | `ffmpeg.exe` | Written next to the plugin (or in this folder) from the packed copy when none exists; the decoder the player spawns. |
@@ -156,7 +157,7 @@ the fallback window and the login window off-screen. It needs no game, network o
 Current output:
 
 ```
-  ok   assembly name HD2QD.HD2Music, version 1.2.2
+  ok   assembly name HD2QD.HD2Music, version 1.3.0
   ok   target framework .NETFramework,Version=v4.8
   ok   Api = 2 (a const the manager reads before running any code)
   ok   Kind = window
@@ -217,6 +218,7 @@ MIT — see [LICENSE](LICENSE).
   - `HD2QD.HD2Music.dll`：完整版，约 29 MB，内置 FFmpeg，首次启动自动释放。
   - `HD2QD.HD2Music-Lite.dll`：精简版，约 340 KB，自动查找 `ffmpeg.exe`：环境变量、设置页、助手 tools、插件目录、**PATH**、注册表 **App Paths**，以及 winget/scoop/chocolatey 常见位置。两个版本不要同时安装。
 - 播放需要游戏运行：播放器跟随 MOD 心跳，游戏退出即停止。未启动游戏时点击歌曲不会出声，底部状态栏会变黄并提示“未启动游戏 · 启动游戏后即可播放”（点击后显示引擎的“请先进入游戏并启用新版播放器”）。
+- 播放列表在管理器重启后保留在 `ncm_queue.json`：只保存队列与选中行，不保存播放进度。账号切换、登录失效、退出登录或重新选择歌单会清除/替换它。
 - 插件与 Python 助手共用 `ncm_helper.lock`，同一时间只有一个解码。助手已在运行（F7 播放）时，
   插件会把点击的播放/切歌/音量/音质等命令写进 `ncm_cmd_*.txt` 转交助手执行；状态栏显示
   “在线助手已接管播放”，标题、进度、歌词从助手状态同步。插件占锁时不写状态与频谱。

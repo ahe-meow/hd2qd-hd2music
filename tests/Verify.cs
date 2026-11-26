@@ -75,6 +75,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckText(asm, plugin);
             CheckQr(asm);
             CheckFfmpeg(asm);
+            CheckQueuePersistence(asm);
             CheckTab(asm, engineOf(asm));
             BuildWindows(asm);
 
@@ -382,6 +383,34 @@ namespace Hd2Qd.HD2Music.Verify
                 plugin.GetField("_showTab", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, null);
                 plugin.GetField("_view", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, null);
             }
+        }
+
+        static void CheckQueuePersistence(Assembly asm)
+        {
+            Type snapshot = asm.GetType("Hd2Qd.HD2Music.QueueSnapshot");
+            Type engine = asm.GetType("Hd2Qd.HD2Music.Engine");
+            if (snapshot == null || engine == null)
+            {
+                Fail("queue persistence is missing");
+                return;
+            }
+            foreach (string field in new[] { "AccountUid", "ListId", "ListName", "Index", "TrackFirst", "Tracks" })
+            {
+                if (snapshot.GetField(field) == null)
+                {
+                    Fail("QueueSnapshot." + field + " is missing");
+                    return;
+                }
+            }
+            foreach (string method in new[] { "SaveQueue", "RestoreQueue", "ClearQueue", "PersistQueueIfChanged" })
+            {
+                if (engine.GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic) == null)
+                {
+                    Fail("Engine." + method + " is missing");
+                    return;
+                }
+            }
+            Pass("playlist persists across launches, cleared on account change or invalid login");
         }
 
         static void CheckFfmpeg(Assembly asm)

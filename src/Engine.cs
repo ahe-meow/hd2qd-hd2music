@@ -114,6 +114,14 @@ public sealed class Engine : IDisposable
 
 	private string _account = "";
 
+	private string _accountUid = "";
+
+	private string _restoredQueueUid = "";
+
+	private string _queueSignature = "";
+
+	static readonly string QueueFile = Path.Combine(Util.Root, "ncm_queue.json");
+
 	private string _state = "idle";
 
 	private string _currentList = "";
@@ -552,6 +560,7 @@ public sealed class Engine : IDisposable
 		Player = new StreamPlayer(FfmpegPath, Path.Combine(Root, "ncm_game_alive.txt"));
 		Player.GameWatch.Start();
 		LoadSettings();
+		RestoreQueue();
 		_worker = new Thread(WorkerRun)
 		{
 			IsBackground = true,
@@ -927,6 +936,13 @@ public sealed class Engine : IDisposable
 			catch
 			{
 			}
+			try
+			{
+				PersistQueueIfChanged();
+			}
+			catch
+			{
+			}
 			Thread.Sleep(200);
 		}
 	}
@@ -1000,6 +1016,144 @@ public sealed class Engine : IDisposable
 
 	private void FinishJobs()
 	{
+	}
+
+	/// <summary>Restore the last queue, but never while the mod helper owns the lock or when
+	/// there is no saved session: a logged-out or switched account must start clean.</summary>
+	void RestoreQueue()
+	{
+		if (_lockedOut || Api == null)
+		{
+			return;
+		}
+		if (!Api.Session.LoggedIn)
+		{
+			try
+			{
+				File.Delete(QueueFile);
+			}
+			catch
+			{
+			}
+			return;
+		}
+		if (!File.Exists(QueueFile))
+		{
+			return;
+		}
+		try
+		{
+			var saved = Util.Parse<QueueSnapshot>(File.ReadAllText(QueueFile, Encoding.UTF8));
+			if (saved == null || saved.Version != 1 || saved.Tracks == null || saved.Tracks.Count == 0)
+			{
+				return;
+			}
+			_restoredQueueUid = saved.AccountUid ?? "";
+			lock (_lock)
+			{
+				if (!string.IsNullOrEmpty(_restoredQueueUid) && !string.IsNullOrEmpty(_accountUid)
+					&& _restoredQueueUid != _accountUid)
+				{
+					return;
+				}
+				_queueTracks.Clear();
+				_queueTracks.AddRange(saved.Tracks);
+				_index = Math.Max(-1, Math.Min(saved.Index, _queueTracks.Count - 1));
+				_currentListId = saved.ListId ?? "";
+				_currentList = saved.ListName ?? "";
+				_trackFirst = Math.Max(1, saved.TrackFirst);
+				_state = "idle";
+				_notice = "已恢复上次的播放列表";
+			}
+			_queueSignature = QueueKey();
+		}
+		catch
+		{
+			try
+			{
+				File.Delete(QueueFile);
+			}
+			catch
+			{
+			}
+		}
+	}
+
+	string QueueKey()
+	{
+		lock (_lock)
+		{
+			int count = _queueTracks.Count;
+			return _accountUid + "|" + _currentListId + "|" + _index + "|" + _trackFirst + "|" + count
+				+ "|" + (count == 0 ? "" : _queueTracks[0].Id + "|" + _queueTracks[count - 1].Id);
+		}
+	}
+
+	void PersistQueueIfChanged()
+	{
+		if (_lockedOut)
+		{
+			return;
+		}
+		string key = QueueKey();
+		if (key == _queueSignature)
+		{
+			return;
+		}
+		_queueSignature = key;
+		SaveQueue();
+	}
+
+	void SaveQueue()
+	{
+		if (_lockedOut)
+		{
+			return;
+		}
+		QueueSnapshot saved;
+		lock (_lock)
+		{
+			saved = new QueueSnapshot
+			{
+				AccountUid = _accountUid,
+				ListId = _currentListId,
+				ListName = _currentList,
+				Index = _index,
+				TrackFirst = _trackFirst,
+				Tracks = new List<Track>(_queueTracks)
+			};
+		}
+		try
+		{
+			Util.AtomicWrite(QueueFile, Util.Serialize(saved));
+		}
+		catch
+		{
+		}
+	}
+
+	void ClearQueue(bool deleteSaved)
+	{
+		lock (_lock)
+		{
+			_queueTracks.Clear();
+			_index = -1;
+			_currentList = "";
+			_currentListId = "";
+			_trackFirst = 1;
+			_state = "idle";
+		}
+		_queueSignature = QueueKey();
+		if (deleteSaved)
+		{
+			try
+			{
+				File.Delete(QueueFile);
+			}
+			catch
+			{
+			}
+		}
 	}
 
 	private void LoadSettings()
@@ -1217,6 +1371,13 @@ public sealed class Engine : IDisposable
 			{
 				string account = _account;
 				_account = ((!string.IsNullOrEmpty(accountInfo.Nickname)) ? accountInfo.Nickname : (string.IsNullOrEmpty(accountInfo.Uid) ? "" : "网易云账号"));
+				_accountUid = accountInfo.Uid ?? "";
+				if (!string.IsNullOrEmpty(_restoredQueueUid) && !string.IsNullOrEmpty(_accountUid)
+					&& _restoredQueueUid != _accountUid)
+				{
+					_restoredQueueUid = "";
+					ClearQueue(true);
+				}
 				_lists.Clear();
 				if (list != null)
 				{
@@ -1236,11 +1397,7 @@ public sealed class Engine : IDisposable
 				}
 				if (!string.IsNullOrEmpty(account) && account != _account)
 				{
-					_queueTracks.Clear();
-					_index = -1;
-					_currentList = "";
-					_currentListId = "";
-					_state = "idle";
+					ClearQueue(true);
 				}
 			}
 		}
@@ -1249,9 +1406,11 @@ public sealed class Engine : IDisposable
 			lock (_lock)
 			{
 				_notice = (initial ? "已保存的登录状态不可用，请重新登录" : "无法读取网易云账号，请稍后刷新");
-				if (initial)
+				if (initial || !Api.Session.LoggedIn)
 				{
 					_account = "";
+					_accountUid = "";
+					ClearQueue(true);
 				}
 			}
 		}
@@ -1504,6 +1663,8 @@ public sealed class Engine : IDisposable
 			string account2 = _account;
 			Api.Session = session;
 			_account = (string.IsNullOrEmpty(account.Nickname) ? "网易云账号" : account.Nickname);
+			_accountUid = account.Uid ?? "";
+			_restoredQueueUid = "";
 			_lists.Clear();
 			if (lists != null)
 			{
@@ -1516,11 +1677,7 @@ public sealed class Engine : IDisposable
 			if (!string.IsNullOrEmpty(account2) && account2 != _account)
 			{
 				Player.Close();
-				_queueTracks.Clear();
-				_index = -1;
-				_state = "idle";
-				_currentList = "";
-				_currentListId = "";
+				ClearQueue(true);
 			}
 		}
 	}

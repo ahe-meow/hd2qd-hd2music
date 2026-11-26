@@ -15,7 +15,7 @@
     <Nullable>disable</Nullable>
     <AssemblyName>HD2QD.HD2Music</AssemblyName>
     <RootNamespace>Hd2Qd.HD2Music</RootNamespace>
-    <Version>1.2.2</Version>
+    <Version>1.3.0</Version>
     <Product>HD2QD HD2 Music</Product>
     <Company>ahe-meow</Company>
     <Copyright>MIT License</Copyright>
@@ -56,6 +56,7 @@
     <Compile Include="Plugin.cs" />
     <Compile Include="QrCode.cs" />
     <Compile Include="QrVerificationRequired.cs" />
+    <Compile Include="QueueSnapshot.cs" />
     <Compile Include="RadioChannel.cs" />
     <Compile Include="RadioEpisode.cs" />
     <Compile Include="Session.cs" />
