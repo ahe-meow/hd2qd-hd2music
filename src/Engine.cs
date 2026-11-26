@@ -1368,6 +1368,17 @@ public sealed class Engine : IDisposable
 		{
 			return;
 		}
+		if (!play && Player != null)
+		{
+			// browsing another playlist replaces the queue: stop what the old queue was playing
+			try
+			{
+				Player.Close();
+			}
+			catch
+			{
+			}
+		}
 		lock (_lock)
 		{
 			_currentList = playlist.Name;
