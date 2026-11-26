@@ -801,13 +801,6 @@ namespace Hd2Qd.HD2Music
                 ItemContainerStyle = Theme.S("Row"),
                 Margin = new Thickness(2.0, 4.0, 2.0, 4.0)
             };
-            _peek.MouseDoubleClick += delegate
-            {
-                if (_peek.SelectedItem is ListBoxItem item && item.Tag is int index)
-                {
-                    _engine.Play(index);
-                }
-            };
             Grid.SetRow(_peek, 1);
             inner.Children.Add(_peek);
 
@@ -912,6 +905,16 @@ namespace Hd2Qd.HD2Music
             _libraryCount = Mono("0", 9.0, Theme.Muted);
             _libraryCount.Margin = new Thickness(8.0, 0.0, 0.0, 0.0);
             title.Children.Add(_libraryCount);
+            TextBlock libraryHint = new TextBlock
+            {
+                Text = "单击歌单查看曲目",
+                FontFamily = Theme.Font("Mono"),
+                FontSize = 8.5,
+                Foreground = Theme.Muted,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(12.0, 0.0, 0.0, 0.0)
+            };
+            title.Children.Add(libraryHint);
             header.Children.Add(title);
 
             StackPanel actions = new StackPanel { Orientation = Orientation.Horizontal };
@@ -976,16 +979,24 @@ namespace Hd2Qd.HD2Music
             _queueCount.Margin = new Thickness(8.0, 0.0, 0.0, 0.0);
             title.Children.Add(_queueCount);
             header.Children.Add(title);
+            StackPanel queueActions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             TextBlock hint = new TextBlock
             {
-                Text = "双击播放",
+                Text = "单击播放",
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 8.5,
                 Foreground = Theme.Muted,
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0.0, 0.0, 12.0, 0.0)
             };
-            DockPanel.SetDock(hint, Dock.Right);
-            header.Children.Add(hint);
+            queueActions.Children.Add(hint);
+            Button playAll = GhostButton("播放全部", delegate { _engine.Play(0); });
+            playAll.Height = 28.0;
+            playAll.MinHeight = 28.0;
+            playAll.Margin = new Thickness(0.0);
+            queueActions.Children.Add(playAll);
+            DockPanel.SetDock(queueActions, Dock.Right);
+            header.Children.Add(queueActions);
             page.Children.Add(header);
 
             Grid tableHeader = TableHeader("#", "TRACK", "LENGTH");
@@ -998,13 +1009,6 @@ namespace Hd2Qd.HD2Music
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0.0),
                 ItemContainerStyle = Theme.S("Row")
-            };
-            _queue.MouseDoubleClick += delegate
-            {
-                if (_queue.SelectedItem is ListBoxItem item && item.Tag is int index)
-                {
-                    _engine.Play(index);
-                }
             };
             body.Children.Add(_queue);
             _queueEmpty = new TextBlock
@@ -1091,13 +1095,6 @@ namespace Hd2Qd.HD2Music
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0.0),
                 ItemContainerStyle = Theme.S("Row")
-            };
-            _results.MouseDoubleClick += delegate
-            {
-                if (_results.SelectedItem is ListBoxItem item && item.Tag is int index)
-                {
-                    _engine.SearchPlay(index);
-                }
             };
             body.Children.Add(_results);
             _searchEmpty = new TextBlock
@@ -1236,13 +1233,6 @@ namespace Hd2Qd.HD2Music
                 BorderThickness = new Thickness(0.0),
                 ItemContainerStyle = Theme.S("Row"),
                 Margin = new Thickness(2.0, 4.0, 2.0, 4.0)
-            };
-            _episodes.MouseDoubleClick += delegate
-            {
-                if (_episodes.SelectedItem is ListBoxItem item && item.Tag is int index)
-                {
-                    _engine.PodcastPlay(index);
-                }
             };
             episodesBody.Children.Add(_episodes);
             _episodeEmpty = new TextBlock
@@ -1765,6 +1755,9 @@ namespace Hd2Qd.HD2Music
                 });
                 Grid.SetColumn(words, 1);
                 row.Children.Add(words);
+                row.Background = Brushes.Transparent;
+                int at = i;
+                row.MouseLeftButtonUp += delegate { PlayQueueAt(at); };
                 _peek.Items.Add(new ListBoxItem { Tag = i, Content = row });
             }
             if (_peek.Items.Count == 0)
@@ -1860,10 +1853,20 @@ namespace Hd2Qd.HD2Music
             };
             card.MouseLeftButtonUp += delegate
             {
-                _engine.OpenPlaylist(playlist);
-                ShowPage("console");
+                _engine.LoadPlaylist(playlist);
+                ShowPage("queue");
             };
             return card;
+        }
+
+        void PlayQueueAt(int index)
+        {
+            UiState state = _engine.Snapshot();
+            if (state.Index == index && (state.State == "playing" || state.State == "paused" || state.State == "loading"))
+            {
+                return;
+            }
+            _engine.Play(index);
         }
 
         void RefreshQueue(UiState state)
@@ -1878,7 +1881,7 @@ namespace Hd2Qd.HD2Music
             _queue.Items.Clear();
             for (int i = 0; i < state.Queue.Count; i++)
             {
-                _queue.Items.Add(TrackRow(i, state.Queue[i], i == state.Index));
+                _queue.Items.Add(TrackRow(i, state.Queue[i], i == state.Index, delegate { PlayQueueAt(i); }));
             }
             _queueEmpty.Visibility = state.Queue.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -1887,7 +1890,7 @@ namespace Hd2Qd.HD2Music
         {
             _searchHint.Text = string.IsNullOrEmpty(state.SearchKeyword)
                 ? "输入关键词后回车；结果会按歌曲列出。"
-                : "关键词：" + state.SearchKeyword + "   ·   " + state.SearchResults.Count + " 首   ·   双击结果开始播放";
+                : "关键词：" + state.SearchKeyword + "   ·   " + state.SearchResults.Count + " 首   ·   单击结果开始播放";
             string signature = state.SearchSerial + ":" + state.SearchResults.Count + ":" + state.SearchState;
             if (signature == _searchSignature)
             {
@@ -1897,7 +1900,7 @@ namespace Hd2Qd.HD2Music
             _results.Items.Clear();
             for (int i = 0; i < state.SearchResults.Count; i++)
             {
-                _results.Items.Add(TrackRow(i, state.SearchResults[i], false));
+                _results.Items.Add(TrackRow(i, state.SearchResults[i], false, delegate { _engine.SearchPlay(i); }));
             }
             _searchEmpty.Visibility = state.SearchResults.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             _searchEmpty.Text = state.SearchState == "loading" ? "正在搜索…" : "输入关键词，结果会按歌曲列出。";
@@ -1969,14 +1972,17 @@ namespace Hd2Qd.HD2Music
                 length.VerticalAlignment = VerticalAlignment.Center;
                 Grid.SetColumn(length, 1);
                 row.Children.Add(length);
+                row.Background = Brushes.Transparent;
+                int at = i;
+                row.MouseLeftButtonUp += delegate { _engine.PodcastPlay(at); };
                 _episodes.Items.Add(new ListBoxItem { Tag = i, Content = row });
             }
             _episodeTitle.Text = state.PodcastTracks.Count > 0 ? state.PodcastTracks.Count + " 期" : "";
         }
 
-        ListBoxItem TrackRow(int index, Track track, bool current)
+        ListBoxItem TrackRow(int index, Track track, bool current, Action play)
         {
-            Grid row = new Grid();
+            Grid row = new Grid { Background = Brushes.Transparent };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36.0) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70.0) });
@@ -2006,6 +2012,10 @@ namespace Hd2Qd.HD2Music
             length.VerticalAlignment = VerticalAlignment.Center;
             Grid.SetColumn(length, 2);
             row.Children.Add(length);
+            if (play != null)
+            {
+                row.MouseLeftButtonUp += delegate { play(); };
+            }
             return new ListBoxItem { Tag = index, Content = row };
         }
 

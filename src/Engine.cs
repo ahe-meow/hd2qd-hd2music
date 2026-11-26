@@ -1352,6 +1352,18 @@ public sealed class Engine : IDisposable
 
 	public void OpenPlaylist(Playlist playlist)
 	{
+		LoadPlaylist(playlist, play: true);
+	}
+
+	/// <summary>Reads a playlist into the queue without starting it, so the player can choose a
+	/// song first (the library card's single click).</summary>
+	public void LoadPlaylist(Playlist playlist)
+	{
+		LoadPlaylist(playlist, play: false);
+	}
+
+	void LoadPlaylist(Playlist playlist, bool play)
+	{
 		if (playlist == null)
 		{
 			return;
@@ -1378,9 +1390,10 @@ public sealed class Engine : IDisposable
 					_queueTracks.AddRange(list);
 					_index = -1;
 					_state = "idle";
-					_notice = ((list.Count == 0) ? "歌单中没有歌曲" : "");
+					_notice = list.Count == 0 ? "歌单中没有歌曲"
+						: play ? "" : "已读取歌单，选择歌曲播放";
 				}
-				if (list.Count > 0)
+				if (play && list.Count > 0)
 				{
 					StartPlay(0);
 				}
