@@ -52,13 +52,21 @@ mono, and yellow is the only accent — the manager's own board, not a stock WPF
 
 1. HD2 Mod Quick Deploy **0.25.0 or later** for the tab (plugin Api 2); 0.15.0–0.24.x still
    works, as a window of its own.
-2. **Plugins** page → **Add plugin…** → `HD2QD.HD2Music.dll` (or drop the file on the page).
-3. Deploy **HD2 Music** in Arsenal, start the game, then open **HD2 Music** on the Plugins page;
+2. Pick **one** of the two builds — never install both, they share the same state files and lock:
+
+   | File | Size | Decoder |
+   |---|---:|---|
+   | `HD2QD.HD2Music.dll` | ~29 MB | **Full**: FFmpeg 6.1.1 is inside the DLL and written out once on first use; zero setup. |
+   | `HD2QD.HD2Music-Lite.dll` | ~340 KB | **Lite**: uses an `ffmpeg.exe` found through `HD2MUSIC_FFMPEG`, `ncm_ffmpeg.txt`, the plugin folder, `%LOCALAPPDATA%\HD2Phone`, or the mod helper's `tools` folder. |
+
+3. **Plugins** page → **Add plugin…** → the chosen file (or drop it on the page).
+4. Deploy **HD2 Music** in Arsenal, start the game, then open **HD2 Music** on the Plugins page;
    it appears as a tab beside the manager, and a second Open shows that same tab.
-4. The decoder travels inside the DLL: FFmpeg 6.1.1 essentials (~79 MB) is written once, next
-   to the plugin or into the player's settings folder, when neither has an `ffmpeg.exe`. An
-   existing file beside the plugin, in the settings folder, or chosen on the **设置** page is
-   used instead (`ncm_ffmpeg.txt` remembers it); `HD2MUSIC_FFMPEG` overrides everything.
+
+The Full build extracts FFmpeg (78.7 MB) next to the plugin, or into the settings folder if that
+is not writable, and checks its SHA-256. The Lite build never writes a decoder; if none is found,
+the status strip says `FFMPEG MISSING` and the **设置** page can point at one. `HD2MUSIC_FFMPEG`
+overrides both.
 
 The plugin and the mod's Python helper (`网易云在线助手`) **cannot run at the same time**: both
 take `%LOCALAPPDATA%\HD2Phone\ncm_helper.lock`, and both write the same state files. The plugin
@@ -128,20 +136,21 @@ Needs the .NET SDK 8 or later (`dotnet` on `PATH`, or set `DOTNET`):
 build.bat
 ```
 
-It builds `release\HD2QD.HD2Music.dll`, then runs `tests\Verify.exe`, which loads the file the way
-the manager does (bytes, not `LoadFrom`), checks the contract (`Api` 2, `Kind` `window`, the one
+It builds both DLLs, then runs `tests\Verify.exe` on each, which loads the file the way the
+manager does (bytes, not `LoadFrom`), checks the contract (`Api` 2, `Kind` `window`, the one
 public `Plugin`, `Title`/`Summary` in both languages), the embedded icon and text, that only .NET
-Framework assemblies are referenced, and builds both windows off-screen and lays them out. It
-needs no game, network or manager.
+Framework assemblies are referenced, the tab path with a fake `host["tab"]`, and builds the view,
+the fallback window and the login window off-screen. It needs no game, network or manager.
 
 Current output:
 
 ```
-  ok   assembly name HD2QD.HD2Music, version 1.1.1
+  ok   assembly name HD2QD.HD2Music, version 1.1.2
   ok   target framework .NETFramework,Version=v4.8
   ok   Api = 2 (a const the manager reads before running any code)
   ok   Kind = window
-  ok   embedded Lang.en.json, Lang.zh-CN.json, Ui.xaml, app.ico, QRCoder.dll, ffmpeg.exe.gz
+  ok   embedded Lang.en.json, Lang.zh-CN.json, Ui.xaml, app.ico, QRCoder.dll
+  ok   embedded ffmpeg.exe.gz (full build)
   ok   references only .NET Framework assemblies (8)
   ok   QR encoder embedded (QRCoder, MIT): 29x29 matrix, no QRCoder.dll on disk
   ok   embedded ffmpeg extracted to a temp folder: 78 MB, SHA-256 matches
@@ -154,10 +163,19 @@ Current output:
 OK: all checks passed
 ```
 
+The Lite build reports the other side of the same checks:
+
+```
+  ok   lite build: decoder is external
+  ok   lite build: no embedded ffmpeg to extract
+  ok   opens as a manager tab: "HD2 音乐 Lite"
+OK: all checks passed
+```
+
 Runtime dependencies: .NET Framework 4.8 (part of Windows 10/11), `System.Web.Extensions`
-(part of the framework) and WPF. Nothing else has to be installed: the QR encoder (QRCoder
-1.4.3, MIT) and FFmpeg 6.1.1 essentials (GPLv3) travel inside the DLL; FFmpeg is extracted on
-first use and checked against its packed SHA-256. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+(part of the framework) and WPF. The QR encoder (QRCoder 1.4.3, MIT) is in both builds.
+The Full build also carries FFmpeg 6.1.1 essentials (GPLv3) and extracts it on first use; the
+Lite build needs an existing `ffmpeg.exe` as above. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Licence and credits
 
@@ -184,13 +202,13 @@ MIT — see [LICENSE](LICENSE).
 电台播客；播放、拖动进度、歌词同步。插件写入与助手相同的状态文件，因此游戏内播放器、2D/3D
 歌词和频谱照常工作。
 
-- 安装：管理器 0.25.0 以上 → 插件页 → 添加 `HD2QD.HD2Music.dll`；以标签页打开，再次“打开”会回到同一页签。旧版 0.15.0–0.24.x 回退为独立窗口。
-- 解码器已随 DLL 打包（FFmpeg 6.1.1 essentials，约 79 MB）：首次启动若插件旁与管理器设置目录
-  都没有 `ffmpeg.exe`，插件会自动释放一份并校验 SHA-256；已有文件或「设置」页选择的路径优先。
+- 安装：管理器 0.25.0 以上 → 插件页 → 添加**其中一个**文件；以标签页打开，再次“打开”会回到同一页签。旧版 0.15.0–0.24.x 回退为独立窗口。
+  - `HD2QD.HD2Music.dll`：完整版，约 29 MB，内置 FFmpeg，首次启动自动释放。
+  - `HD2QD.HD2Music-Lite.dll`：精简版，约 340 KB，使用已有的 `ffmpeg.exe`（助手 tools、插件目录、设置页或 `HD2MUSIC_FFMPEG`）。两个版本不要同时安装。
 - 插件与压缩包里的 Python 助手**不能同时运行**（共用 `ncm_helper.lock`）；插件只在打开窗口或
   执行命令时才占锁，不会在管理器启动时抢占。
 - 状态字段与助手 1.2.3 的 `publish()` 逐项对照；游戏内“加载更多”相关的分页字段未写入，
   其余当前歌曲、歌词、队列、封面、频谱均一致。
 
-构建：`build.bat`，产物 `release\HD2QD.HD2Music.dll`，并自动运行 `tests\Verify.exe` 检查契约、
+构建：`build.bat`，同时产出 `release\HD2QD.HD2Music.dll`（完整版）与 `release\HD2QD.HD2Music-Lite.dll`（精简版），并分别运行 `tests\Verify.exe` 检查契约、
 资源、依赖与窗口构造。

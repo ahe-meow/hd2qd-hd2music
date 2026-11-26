@@ -151,7 +151,7 @@ namespace Hd2Qd.HD2Music.Verify
         static void CheckResources(Assembly asm)
         {
             var names = asm.GetManifestResourceNames();
-            foreach (string wanted in new[] { "Lang.en.json", "Lang.zh-CN.json", "Ui.xaml", "app.ico", "QRCoder.dll", "ffmpeg.exe.gz" })
+            foreach (string wanted in new[] { "Lang.en.json", "Lang.zh-CN.json", "Ui.xaml", "app.ico", "QRCoder.dll" })
             {
                 if (names.Contains(wanted))
                 {
@@ -162,6 +162,7 @@ namespace Hd2Qd.HD2Music.Verify
                     Fail("embedded resource " + wanted + " is missing");
                 }
             }
+            Pass(names.Contains("ffmpeg.exe.gz") ? "embedded ffmpeg.exe.gz (full build)" : "lite build: decoder is external");
             using (Stream icon = asm.GetManifestResourceStream("app.ico"))
             {
                 if (icon == null || icon.Length < 6)
@@ -331,10 +332,11 @@ namespace Hd2Qd.HD2Music.Verify
                     };
                 };
             var host = new Dictionary<string, object> { ["tab"] = tab, ["lang"] = "zh-CN" };
+            string expected = (string)plugin.GetMethod("Title").Invoke(null, new object[] { "zh-CN" });
             try
             {
                 plugin.GetMethod("Open", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { null, host });
-                if (tabTitle != "HD2 音乐" || tabBody == null || tabBody.GetType() != player || tabClosed == null)
+                if (tabTitle != expected || tabBody == null || tabBody.GetType() != player || tabClosed == null)
                 {
                     Fail("host[\"tab\"] was not given the player and its title");
                     return;
@@ -384,6 +386,11 @@ namespace Hd2Qd.HD2Music.Verify
 
         static void CheckFfmpeg(Assembly asm)
         {
+            if (!asm.GetManifestResourceNames().Contains("ffmpeg.exe.gz"))
+            {
+                Pass("lite build: no embedded ffmpeg to extract");
+                return;
+            }
             Type ffmpeg = asm.GetType("Hd2Qd.HD2Music.Ffmpeg");
             if (ffmpeg == null)
             {

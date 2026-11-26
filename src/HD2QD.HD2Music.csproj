@@ -15,7 +15,7 @@
     <Nullable>disable</Nullable>
     <AssemblyName>HD2QD.HD2Music</AssemblyName>
     <RootNamespace>Hd2Qd.HD2Music</RootNamespace>
-    <Version>1.1.1</Version>
+    <Version>1.1.2</Version>
     <Product>HD2QD HD2 Music</Product>
     <Company>ahe-meow</Company>
     <Copyright>MIT License</Copyright>
@@ -23,6 +23,9 @@
     <DebugType>none</DebugType>
     <PathMap>$(MSBuildProjectDirectory)\..=src</PathMap>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- two flavours from one source: full carries FFmpeg, lite looks for the mod helper's copy -->
+    <EmbeddedFfmpeg Condition="'$(EmbeddedFfmpeg)' == ''">true</EmbeddedFfmpeg>
+    <DefineConstants Condition="'$(EmbeddedFfmpeg)' == 'true'">$(DefineConstants);EMBEDDED_FFMPEG</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -78,7 +81,7 @@
          for the picture on the plugin's card -->
     <EmbeddedResource Include="app.ico" LogicalName="app.ico" />
     <!-- the decoder, packed once and written out by Ffmpeg.cs where the player runs it -->
-    <EmbeddedResource Include="../assets/ffmpeg.exe.gz" LogicalName="ffmpeg.exe.gz" />
+    <EmbeddedResource Include="../assets/ffmpeg.exe.gz" LogicalName="ffmpeg.exe.gz" Condition="'$(EmbeddedFfmpeg)' == 'true'" />
     <EmbeddedResource Include="$(PkgQRCoder)\lib\net40\QRCoder.dll" LogicalName="QRCoder.dll" />
     <Reference Include="System.Web.Extensions" />
   </ItemGroup>

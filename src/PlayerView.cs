@@ -428,7 +428,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.1.1",
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.1.2 · " + (Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1438,7 +1438,7 @@ namespace Hd2Qd.HD2Music
             body.Children.Add(links);
             body.Children.Add(new TextBlock
             {
-                Text = "插件 HD2QD.HD2Music 1.1.1 · MIT",
+                Text = "插件 HD2QD.HD2Music 1.1.2 · " + (Ffmpeg.Embedded ? "内置解码器" : "外置解码器") + " · MIT",
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1661,7 +1661,7 @@ namespace Hd2Qd.HD2Music
             MarkSegments(_orderSegments, state.Order);
             _lyricsTick.IsChecked = state.LyricsEnabled;
             _automixTick.IsChecked = state.Automix;
-            _ffmpeg.Text = _engine.FfmpegPath;
+            _ffmpeg.Text = (Ffmpeg.Embedded ? "内置 · " : "外置 · ") + _engine.FfmpegPath;
             _ffmpeg.Foreground = File.Exists(_engine.FfmpegPath) ? Theme.Muted : Theme.Yellow;
             _sheetAccount.Text = string.IsNullOrEmpty(state.Account) ? "未登录" : state.Account;
             _sheetLock.Text = _engine.IsLockedOut ? "网易云在线助手已在运行：本插件不会播放，也不会写状态文件。" : "";

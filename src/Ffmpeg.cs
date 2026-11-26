@@ -14,6 +14,11 @@ namespace Hd2Qd.HD2Music
     {
         internal const string Resource = "ffmpeg.exe.gz";
         internal const string Sha256 = "04e1307997530f9cf2fe35cba2ca7e8875ca91da02f89d6c7243df819c94ad00";
+#if EMBEDDED_FFMPEG
+        internal const bool Embedded = true;
+#else
+        internal const bool Embedded = false;
+#endif
         const long MinimumLength = 50L * 1024 * 1024;
 
         static readonly object Gate = new object();
@@ -37,6 +42,7 @@ namespace Hd2Qd.HD2Music
                         return candidate;
                     }
                 }
+#if EMBEDDED_FFMPEG
                 foreach (string target in Targets())
                 {
                     try
@@ -49,6 +55,7 @@ namespace Hd2Qd.HD2Music
                     {
                     }
                 }
+#endif
                 return null;
             }
         }

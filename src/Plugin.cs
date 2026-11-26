@@ -25,9 +25,21 @@ namespace Hd2Qd.HD2Music
         static Action _showTab;
         static bool _hooked;
 
-        public static string Title(string lang) => Words.Get(lang, "title");
+        public static string Title(string lang)
+        {
+            string title = Words.Get(lang, "title");
+            return Ffmpeg.Embedded ? title : title + " Lite";
+        }
 
-        public static string Summary(string lang) => Words.Get(lang, "summary");
+        public static string Summary(string lang)
+        {
+            string summary = Words.Get(lang, "summary");
+            if (Ffmpeg.Embedded)
+            {
+                return summary;
+            }
+            return summary + (Words.IsChinese(lang) ? " 外置解码器版。" : " External decoder edition.");
+        }
 
         /// <summary>Kind "window": the card's Open. In Quick Deploy 0.25.0 and later the player
         /// is a tab of the manager's window (host["tab"]); an older manager gets the same
