@@ -2574,7 +2574,12 @@ public sealed class Engine : IDisposable
 			_notice = "音源连接中断，正在续播当前歌曲…";
 		}
 		double duration = TrackDuration();
-		if (duration > 0.0 && endedPosition >= duration - Math.Max(1.5, Math.Min(5.0, duration * 0.025)))
+		double ended = endedPosition;
+		if (ended <= 0.0 && Player != null && Player.Status != null)
+		{
+			ended = Player.Status.Pos;
+		}
+		if (duration > 0.0 && ended >= duration - Math.Max(1.5, Math.Min(5.0, duration * 0.025)))
 		{
 			// the stream ended just before its declared duration: advance instead of
 			// replaying the last half-second over and over

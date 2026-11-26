@@ -833,8 +833,17 @@ public sealed class StreamPlayer
 			if (outcome.HasValue || flag)
 			{
 				EndedPosition = pos;
+				int result = outcome ?? 1;
+				double duration = Status.Dur;
+				if (result != 0 && pos > 0.0 && duration > 0.0
+					&& pos >= duration - Math.Max(1.5, Math.Min(5.0, duration * 0.025)))
+				{
+					// the decoder reported a stream break, but the audible position reached
+					// the end: a CDN closing at EOF is a normal finish, not a retry
+					result = 0;
+				}
 				Close();
-				return outcome ?? 1;
+				return result;
 			}
 			return null;
 		}
