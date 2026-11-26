@@ -428,7 +428,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.1.4 · " + (Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.1.5 · " + (Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1440,7 +1440,7 @@ namespace Hd2Qd.HD2Music
             body.Children.Add(links);
             body.Children.Add(new TextBlock
             {
-                Text = "插件 HD2QD.HD2Music 1.1.4 · " + (Ffmpeg.Embedded ? "内置解码器" : "外置解码器") + " · MIT",
+                Text = "插件 HD2QD.HD2Music 1.1.5 · " + (Ffmpeg.Embedded ? "内置解码器" : "外置解码器") + " · MIT",
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1702,6 +1702,11 @@ namespace Hd2Qd.HD2Music
                     : state.State == "finished" ? "播放结束"
                     : "空闲";
             }
+            else if (!state.GameRunning && !reason.Contains("游戏") && !NoticeTakesPrecedence(reason))
+            {
+                // "已读取歌单，选择歌曲播放" alone hid the real reason a click does nothing
+                reason = "未启动游戏 · " + reason;
+            }
             _statusNotice.Text = "STATUS " + reason;
             bool busy = state.State == "loading" || state.State == "buffering" || reason.Contains("正在");
             _statusNotice.Foreground = (busy || !state.GameRunning || reason.Contains("游戏")) ? Theme.Yellow : Theme.Muted;
@@ -1861,6 +1866,15 @@ namespace Hd2Qd.HD2Music
                 ShowPage("queue");
             };
             return card;
+        }
+
+        static bool NoticeTakesPrecedence(string notice)
+        {
+            // an account or helper problem blocks playback even after the game starts
+            return notice.Contains("登录") || notice.Contains("扫码") || notice.Contains("二维码")
+                || notice.Contains("COOKIE") || notice.Contains("短信") || notice.Contains("锁")
+                || notice.Contains("失败") || notice.Contains("不可用") || notice.Contains("中断")
+                || notice.Contains("版权") || notice.Contains("会员") || notice.Contains("助手已经在运行");
         }
 
         void PlayQueueAt(int index)
