@@ -162,13 +162,29 @@ public sealed class Engine : IDisposable
 
 	private string _searchState = "";
 
+	private string _searchMore = "";
+
+	private int _searchOffset;
+
 	private string _radioState = "";
+
+	private string _radioKeyword = "";
 
 	private string _podcastState = "";
 
 	private string _podcastChannel = "";
 
+	private string _podcastFilter = "";
+
+	private int _podcastFilterSerial;
+
 	private string _recommendState = "";
+
+	private string _recommendMore = "";
+
+	private int _recommendOffset;
+
+	private bool _accountLoading;
 
 	private string _quality = "standard";
 
@@ -1264,6 +1280,13 @@ public sealed class Engine : IDisposable
 				SearchSerial = _searchSerial,
 				SearchKeyword = _searchKeyword,
 				SearchState = _searchState,
+				SearchMore = _searchMore,
+				SearchOffset = _searchOffset,
+				RadioKeyword = _radioKeyword,
+				PodcastFilter = _podcastFilter,
+				PodcastFilterSerial = _podcastFilterSerial,
+				RecommendMore = _recommendMore,
+				AccountLoading = _accountLoading,
 				RadioState = _radioState,
 				PodcastState = _podcastState,
 				RecommendState = _recommendState,
@@ -1283,11 +1306,12 @@ public sealed class Engine : IDisposable
 				Radios = new List<RadioChannel>(_radios),
 				PodcastTracks = new List<Track>(_podcastTracks)
 			};
-			LyricLines(num, out var previous, out var current, out var next, out var _, out var index, out var translation);
+			LyricLines(num, out var previous, out var current, out var next, out var prefix, out var index, out var translation);
 			obj.PreviousLyric = previous;
 			obj.Lyric = current;
 			obj.NextLyric = next;
 			obj.Translation = translation;
+			obj.LyricPrefix = prefix ?? "";
 			obj.LyricIndex = index;
 			if (_lockedOut)
 			{
@@ -1352,6 +1376,10 @@ public sealed class Engine : IDisposable
 
 	private void RefreshAccount(bool initial)
 	{
+		lock (_lock)
+		{
+			_accountLoading = true;
+		}
 		try
 		{
 			AccountInfo accountInfo = Api.Account();
@@ -1399,12 +1427,14 @@ public sealed class Engine : IDisposable
 				{
 					ClearQueue(true);
 				}
+				_accountLoading = false;
 			}
 		}
 		catch
 		{
 			lock (_lock)
 			{
+				_accountLoading = false;
 				_notice = (initial ? "已保存的登录状态不可用，请重新登录" : "无法读取网易云账号，请稍后刷新");
 				if (initial || !Api.Session.LoggedIn)
 				{
@@ -1765,6 +1795,8 @@ public sealed class Engine : IDisposable
 			_searchKeyword = keyword;
 			_searchResults.Clear();
 			_searchState = ((keyword.Length == 0) ? "empty" : "loading");
+			_searchMore = "";
+			_searchOffset = 0;
 		}
 		if (keyword.Length == 0)
 		{
@@ -1775,13 +1807,15 @@ public sealed class Engine : IDisposable
 		{
 			try
 			{
-				List<Track> collection = Api.SearchTracks(keyword, cookies);
+				BrowsePage<Track> page = Api.SearchTracksPage(keyword, cookies, 0);
 				lock (_lock)
 				{
 					if (_searchKeyword == keyword)
 					{
 						_searchResults.Clear();
-						_searchResults.AddRange(collection);
+						_searchResults.AddRange(page.Rows);
+						_searchOffset = page.Offset;
+						_searchMore = page.More ? "ready" : "end";
 						_searchState = "ready";
 					}
 				}
@@ -1793,11 +1827,163 @@ public sealed class Engine : IDisposable
 					if (_searchKeyword == keyword)
 					{
 						_searchState = "error";
+						_searchMore = "error";
 					}
 					_notice = "搜索失败：" + ex.Message;
 				}
 			}
 		});
+	}
+
+	public void SearchMore(string serial)
+	{
+		string keyword;
+		int offset;
+		int currentSerial;
+		lock (_lock)
+		{
+			currentSerial = _searchSerial;
+			keyword = _searchKeyword;
+			offset = _searchOffset;
+			if (string.IsNullOrEmpty(keyword) || !string.IsNullOrEmpty(serial)
+				&& !string.Equals(serial, currentSerial.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal))
+			{
+				return;
+			}
+			if (_searchMore != "ready" && _searchMore != "error")
+			{
+				return;
+			}
+			_searchMore = "loading";
+		}
+		Dictionary<string, string> cookies = Api.Session.Cookies;
+		Post(delegate
+		{
+			try
+			{
+				BrowsePage<Track> page = Api.SearchTracksPage(keyword, cookies, offset);
+				lock (_lock)
+				{
+					if (_searchKeyword == keyword && _searchSerial == currentSerial)
+					{
+						_searchResults.AddRange(page.Rows);
+						_searchOffset = page.Offset;
+						_searchMore = page.More ? "ready" : "end";
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				lock (_lock)
+				{
+					if (_searchKeyword == keyword)
+					{
+						_searchMore = "error";
+					}
+					_notice = "加载更多失败：" + ex.Message;
+				}
+			}
+		});
+	}
+
+	public void RadioSearch(string keyword)
+	{
+		keyword = Util.Clean(keyword ?? "").Trim();
+		if (keyword.Length > 60)
+		{
+			keyword = keyword.Substring(0, 60);
+		}
+		Dictionary<string, string> cookies = Api.Session.Cookies;
+		lock (_lock)
+		{
+			_radioKeyword = keyword;
+			_radioState = "loading";
+			_radios.Clear();
+		}
+		if (keyword.Length == 0)
+		{
+			RadioDirectory();
+			return;
+		}
+		Post(delegate
+		{
+			try
+			{
+				List<RadioChannel> collection = Api.SearchRadios(keyword, cookies);
+				lock (_lock)
+				{
+					if (_radioKeyword == keyword)
+					{
+						_radios.Clear();
+						_radios.AddRange(collection);
+						_radioState = collection.Count == 0 ? "empty" : "ready";
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				lock (_lock)
+				{
+					if (_radioKeyword == keyword)
+					{
+						_radioState = "error";
+					}
+					_notice = "电台搜索失败：" + ex.Message;
+				}
+			}
+		});
+	}
+
+	public void RadioClipboard()
+	{
+		string text = "";
+		Thread thread = new Thread((ThreadStart)delegate
+		{
+			try
+			{
+				text = Clipboard.ContainsText() ? Clipboard.GetText() : "";
+			}
+			catch
+			{
+			}
+		});
+		thread.SetApartmentState(ApartmentState.STA);
+		thread.Start();
+		thread.Join(1500);
+		RadioSearch(text);
+	}
+
+	public void PodcastFilter(string text)
+	{
+		text = Util.Clean(text ?? "").Trim();
+		if (text.Length > 80)
+		{
+			text = text.Substring(0, 80);
+		}
+		lock (_lock)
+		{
+			_podcastFilter = text;
+			_podcastFilterSerial++;
+		}
+	}
+
+	public void PodcastFilterClipboard()
+	{
+		string text = "";
+		Thread thread = new Thread((ThreadStart)delegate
+		{
+			try
+			{
+				text = Clipboard.ContainsText() ? Clipboard.GetText() : "";
+			}
+			catch
+			{
+			}
+		});
+		thread.SetApartmentState(ApartmentState.STA);
+		thread.Start();
+		thread.Join(1500);
+		PodcastFilter(text);
 	}
 
 	public void SearchClipboard()
@@ -1891,6 +2077,7 @@ public sealed class Engine : IDisposable
 		lock (_lock)
 		{
 			_radioState = "loading";
+			_radioKeyword = "";
 			_notice = "正在获取电台…";
 		}
 		Post(delegate
@@ -1923,6 +2110,11 @@ public sealed class Engine : IDisposable
 		lock (_lock)
 		{
 			_podcastState = "loading";
+			if (_podcastChannel != channelId)
+			{
+				_podcastFilter = "";
+				_podcastFilterSerial++;
+			}
 			_podcastChannel = channelId;
 			_podcastTracks.Clear();
 		}
@@ -2049,20 +2241,51 @@ public sealed class Engine : IDisposable
 
 	public void LoadRecommendations()
 	{
+		LoadRecommendations(more: false);
+	}
+
+	public void LoadRecommendations(bool more)
+	{
+		int offset;
+		HashSet<string> exclude;
 		lock (_lock)
 		{
+			if (more && _recommendMore != "ready" && _recommendMore != "error")
+			{
+				return;
+			}
 			_recommendState = "loading";
+			if (more)
+			{
+				_recommendMore = "loading";
+				offset = _recommendOffset;
+				exclude = new HashSet<string>(_recommended.Select(row => row.Id), StringComparer.Ordinal);
+			}
+			else
+			{
+				_recommendMore = "";
+				_recommendOffset = 0;
+				offset = 0;
+				exclude = new HashSet<string>(StringComparer.Ordinal);
+			}
 		}
 		Post(delegate
 		{
 			try
 			{
-				List<Playlist> collection = Api.Recommendations();
+				BrowsePage<Playlist> page = more
+					? Api.RecommendationPage(offset, exclude)
+					: new BrowsePage<Playlist> { Rows = Api.Recommendations(), Offset = 0, More = false };
 				lock (_lock)
 				{
-					_recommended.Clear();
-					_recommended.AddRange(collection);
+					if (!more)
+					{
+						_recommended.Clear();
+					}
+					_recommended.AddRange(page.Rows);
+					_recommendOffset = page.Offset;
 					_recommendState = "ready";
+					_recommendMore = page.More ? "ready" : "end";
 				}
 			}
 			catch (Exception ex)
@@ -2070,6 +2293,7 @@ public sealed class Engine : IDisposable
 				lock (_lock)
 				{
 					_recommendState = "error";
+					_recommendMore = "error";
 					_notice = "推荐读取失败：" + ex.Message;
 				}
 			}
@@ -2937,10 +3161,17 @@ public sealed class Engine : IDisposable
 		int searchSerial;
 		string searchKeyword;
 		string searchState;
+		string searchMore;
+		int searchOffset;
 		string radioState;
+		string radioKeyword;
 		string podcastState;
 		string recommendState;
 		string podcastChannel;
+		string podcastFilter;
+		int podcastFilterSerial;
+		string recommendMore;
+		bool accountLoading;
 		Dictionary<string, string> dictionary;
 		Dictionary<string, string> dictionary2;
 		Dictionary<string, string> dictionary3;
@@ -2973,13 +3204,20 @@ public sealed class Engine : IDisposable
 			searchSerial = _searchSerial;
 			searchKeyword = _searchKeyword;
 			searchState = _searchState;
+			searchMore = _searchMore;
+			searchOffset = _searchOffset;
 			radioState = _radioState;
+			radioKeyword = _radioKeyword;
 			podcastState = _podcastState;
 			recommendState = _recommendState;
 			text2 = _coverPreviewKey;
 			text3 = _coverTextureKey;
 			text4 = _miniKey;
 			podcastChannel = _podcastChannel;
+			podcastFilter = _podcastFilter;
+			podcastFilterSerial = _podcastFilterSerial;
+			recommendMore = _recommendMore;
+			accountLoading = _accountLoading;
 			dictionary = new Dictionary<string, string>(_recommendTiles, StringComparer.Ordinal);
 			dictionary2 = new Dictionary<string, string>(_recommendKeys, StringComparer.Ordinal);
 			dictionary3 = new Dictionary<string, string>(_listTiles, StringComparer.Ordinal);
@@ -3110,6 +3348,7 @@ public sealed class Engine : IDisposable
 		if (!string.IsNullOrEmpty(recommendState))
 		{
 			list8.Add("recommend_state=" + recommendState);
+			list8.Add("recommend_more=" + recommendMore);
 		}
 		foreach (Playlist item3 in list2)
 		{
@@ -3123,10 +3362,13 @@ public sealed class Engine : IDisposable
 		if (!string.IsNullOrEmpty(podcastChannel))
 		{
 			list8.Add("podcast_id=" + podcastChannel);
+			list8.Add("podcast_filter=" + Util.Clean(podcastFilter));
+			list8.Add("podcast_filter_serial=" + podcastFilterSerial.ToString(CultureInfo.InvariantCulture));
 		}
 		if (!string.IsNullOrEmpty(radioState))
 		{
 			list8.Add("radio_state=" + radioState);
+			list8.Add("radio_keyword=" + Util.Clean(radioKeyword));
 			foreach (RadioChannel item4 in list5)
 			{
 				list8.Add("radio=" + item4.Id + "\t" + Util.Clean(item4.Name) + "\t" + Util.Clean(item4.Description));
@@ -3143,9 +3385,12 @@ public sealed class Engine : IDisposable
 		}
 		if (!string.IsNullOrEmpty(searchState))
 		{
+			list8.Add("account_loading=" + (accountLoading ? 1 : 0));
 			list8.Add("search_state=" + searchState);
 			list8.Add("search_serial=" + searchSerial);
 			list8.Add("search_keyword=" + Util.Clean(searchKeyword));
+			list8.Add("search_more=" + searchMore);
+			list8.Add("search_offset=" + searchOffset.ToString(CultureInfo.InvariantCulture));
 			for (int k = 0; k < list4.Count; k++)
 			{
 				list8.Add("search_result=" + (k + 1) + "\t" + Util.Clean(list4[k].Title) + "\t" + Util.Clean(list4[k].Artist));
@@ -3602,7 +3847,7 @@ public sealed class Engine : IDisposable
 		case 9:
 			if (text2 == "recommend")
 			{
-				LoadRecommendations();
+				LoadRecommendations(value == "more");
 			}
 			break;
 		case 2:
@@ -3612,7 +3857,17 @@ public sealed class Engine : IDisposable
 			}
 			break;
 		case 12:
-			if (text2 == "podcast_play")
+			if (text2 == "radio_search")
+			{
+				try
+				{
+					RadioSearch(Encoding.UTF8.GetString(Hex(value)));
+				}
+				catch
+				{
+				}
+			}
+			else if (text2 == "podcast_play")
 			{
 				int num5 = value.IndexOf(' ');
 				if (num5 > 0)
@@ -3628,7 +3883,11 @@ public sealed class Engine : IDisposable
 			}
 			break;
 		case 11:
-			if (text2 == "search_play")
+			if (text2 == "search_more")
+			{
+				SearchMore(value);
+			}
+			else if (text2 == "search_play")
 			{
 				int num2 = value.IndexOf(' ');
 				if (num2 > 0 && int.TryParse(value.Substring(num2 + 1), out var result3) && value.Substring(0, num2) == _searchSerial.ToString(CultureInfo.InvariantCulture))
@@ -3645,9 +3904,31 @@ public sealed class Engine : IDisposable
 			}
 			break;
 		}
-		case 13:
 		case 14:
+			if (text2 == "podcast_filter")
+			{
+				try
+				{
+					PodcastFilter(Encoding.UTF8.GetString(Hex(value)));
+				}
+				catch
+				{
+				}
+			}
+			break;
 		case 15:
+			if (text2 == "radio_clipboard")
+			{
+				RadioClipboard();
+			}
+			break;
+		case 24:
+			if (text2 == "podcast_filter_clipboard")
+			{
+				PodcastFilterClipboard();
+			}
+			break;
+		case 13:
 			break;
 		}
 	}

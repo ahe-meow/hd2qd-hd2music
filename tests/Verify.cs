@@ -76,6 +76,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckQr(asm);
             CheckFfmpeg(asm);
             CheckBrowseApi(asm);
+            CheckBrowseState(asm);
             CheckQueuePersistence(asm);
             CheckTab(asm, engineOf(asm));
             BuildWindows(asm);
@@ -412,6 +413,29 @@ namespace Hd2Qd.HD2Music.Verify
                 }
             }
             Pass("browse APIs present");
+        }
+
+        static void CheckBrowseState(Assembly asm)
+        {
+            Type ui = asm.GetType("Hd2Qd.HD2Music.UiState");
+            foreach (string field in new[] { "SearchMore", "SearchOffset", "RadioKeyword", "PodcastFilter", "PodcastFilterSerial", "RecommendMore", "AccountLoading", "LyricPrefix" })
+            {
+                if (ui.GetField(field) == null)
+                {
+                    Fail("UiState." + field + " is missing");
+                    return;
+                }
+            }
+            Type engine = asm.GetType("Hd2Qd.HD2Music.Engine");
+            foreach (string method in new[] { "SearchMore", "RadioSearch", "PodcastFilter" })
+            {
+                if (engine.GetMethod(method, BindingFlags.Instance | BindingFlags.Public) == null)
+                {
+                    Fail("Engine." + method + " is missing");
+                    return;
+                }
+            }
+            Pass("browse state fields and commands present");
         }
 
         static void CheckQueuePersistence(Assembly asm)
