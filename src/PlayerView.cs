@@ -92,6 +92,8 @@ namespace Hd2Qd.HD2Music
         StackPanel _languageMode;
 
         string _appliedLang = "";
+
+        Dictionary<string, object> _host;
         ListBox _results;
         TextBlock _searchEmpty;
         TextBlock _searchHint;
@@ -128,8 +130,13 @@ namespace Hd2Qd.HD2Music
         LoginWindow _login;
         Window _window;
 
-        public PlayerView(Engine engine) : this(engine, null)
+        public PlayerView(Engine engine) : this(engine, (string)null)
         {
+        }
+
+        public PlayerView(Engine engine, Dictionary<string, object> host) : this(engine, Words.Lang(host))
+        {
+            _host = host;
         }
 
         public PlayerView(Engine engine, string hostLang)
@@ -455,7 +462,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.5.0 · " + (Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.5.1 · " + (Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1749,6 +1756,10 @@ namespace Hd2Qd.HD2Music
             // network reply already gone, an item list changed under it
             try
             {
+                if (_host != null)
+                {
+                    I18n.SetHostLang(Words.Lang(_host));
+                }
                 RefreshCore();
                 // page controls and dynamic labels are built/updated during RefreshCore;
                 // translate afterwards so newly added controls are covered too

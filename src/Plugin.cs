@@ -71,7 +71,7 @@ namespace Hd2Qd.HD2Music
 
             Engine engine = EnsureEngine(host);
             string title = Title(Words.Lang(host));
-            PlayerView view = new PlayerView(engine, Words.Lang(host));
+            PlayerView view = new PlayerView(engine, host);
             _view = view;
             if (host != null && host.TryGetValue("tab", out object factory)
                 && factory is Func<string, FrameworkElement, Action, Dictionary<string, object>> tab)
