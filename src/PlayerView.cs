@@ -71,6 +71,20 @@ namespace Hd2Qd.HD2Music
         string _queueSignature = "";
 
         TextBox _search;
+
+        Button _dailyButton;
+
+        Button _fmButton;
+
+        Button _stopButton;
+
+        TextBox _radioSearch;
+
+        Button _radioSearchButton;
+
+        TextBox _podcastFilter;
+
+        Button _podcastFilterButton;
         ListBox _results;
         TextBlock _searchEmpty;
         TextBlock _searchHint;
@@ -931,6 +945,10 @@ namespace Hd2Qd.HD2Music
                 Refresh();
             });
             actions.Children.Add(_recommendedButton);
+            _dailyButton = GhostButton("每日推荐", delegate { _engine.Daily(); });
+            actions.Children.Add(_dailyButton);
+            _fmButton = GhostButton("私人 FM", delegate { _engine.Fm(); });
+            actions.Children.Add(_fmButton);
             actions.Children.Add(GhostButton("刷新", delegate
             {
                 _engine.RefreshAccount();
@@ -997,6 +1015,11 @@ namespace Hd2Qd.HD2Music
             playAll.MinHeight = 28.0;
             playAll.Margin = new Thickness(0.0);
             queueActions.Children.Add(playAll);
+            _stopButton = GhostButton("STOP", delegate { _engine.StopPlayback(); });
+            _stopButton.Height = 28.0;
+            _stopButton.MinHeight = 28.0;
+            _stopButton.Margin = new Thickness(6.0, 0.0, 0.0, 0.0);
+            queueActions.Children.Add(_stopButton);
             DockPanel.SetDock(queueActions, Dock.Right);
             header.Children.Add(queueActions);
             page.Children.Add(header);
@@ -1124,6 +1147,44 @@ namespace Hd2Qd.HD2Music
             header.Children.Add(SectionLabel("RADIO / PODCAST"));
             StackPanel actions = new StackPanel { Orientation = Orientation.Horizontal };
             actions.Children.Add(GhostButton("刷新电台", delegate { _engine.RadioDirectory(); }));
+            _radioSearch = new TextBox
+            {
+                Width = 150.0,
+                Height = 26.0,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Style = Theme.S("Input"),
+                Tag = "搜索电台"
+            };
+            _radioSearch.KeyDown += delegate(object sender, KeyEventArgs e)
+            {
+                if (e.Key == Key.Return)
+                {
+                    _engine.RadioSearch(_radioSearch.Text);
+                }
+            };
+            actions.Children.Add(_radioSearch);
+            _radioSearchButton = GhostButton("搜索电台", delegate { _engine.RadioSearch(_radioSearch.Text); });
+            actions.Children.Add(_radioSearchButton);
+            actions.Children.Add(GhostButton("粘贴电台", delegate { _engine.RadioClipboard(); }));
+            _podcastFilter = new TextBox
+            {
+                Width = 120.0,
+                Height = 26.0,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Style = Theme.S("Input"),
+                Tag = "筛选播客节目"
+            };
+            _podcastFilter.KeyDown += delegate(object sender, KeyEventArgs e)
+            {
+                if (e.Key == Key.Return)
+                {
+                    _engine.PodcastFilter(_podcastFilter.Text);
+                }
+            };
+            actions.Children.Add(_podcastFilter);
+            _podcastFilterButton = GhostButton("筛选", delegate { _engine.PodcastFilter(_podcastFilter.Text); });
+            actions.Children.Add(_podcastFilterButton);
+            actions.Children.Add(GhostButton("粘贴筛选", delegate { _engine.PodcastFilterClipboard(); }));
             DockPanel.SetDock(actions, Dock.Right);
             header.Children.Add(actions);
             page.Children.Add(header);

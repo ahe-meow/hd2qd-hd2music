@@ -77,6 +77,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckFfmpeg(asm);
             CheckBrowseApi(asm);
             CheckBrowseState(asm);
+            CheckBrowseUi(asm);
             CheckQueuePersistence(asm);
             CheckTab(asm, engineOf(asm));
             BuildWindows(asm);
@@ -436,6 +437,20 @@ namespace Hd2Qd.HD2Music.Verify
                 }
             }
             Pass("browse state fields and commands present");
+        }
+
+        static void CheckBrowseUi(Assembly asm)
+        {
+            Type player = asm.GetType("Hd2Qd.HD2Music.PlayerView");
+            foreach (string field in new[] { "_dailyButton", "_fmButton", "_stopButton", "_radioSearch", "_radioSearchButton", "_podcastFilter", "_podcastFilterButton" })
+            {
+                if (player.GetField(field, BindingFlags.Instance | BindingFlags.NonPublic) == null)
+                {
+                    Fail("PlayerView." + field + " is missing");
+                    return;
+                }
+            }
+            Pass("browse UI entries present");
         }
 
         static void CheckQueuePersistence(Assembly asm)
