@@ -445,7 +445,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.4.0 · " + (Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.4.1 · " + (Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1155,17 +1155,31 @@ namespace Hd2Qd.HD2Music
             page.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             page.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.0, GridUnitType.Star) });
 
-            DockPanel header = new DockPanel { Margin = new Thickness(0.0, 0.0, 0.0, 12.0), LastChildFill = false };
+            DockPanel header = new DockPanel { Margin = new Thickness(0.0, 0.0, 0.0, 16.0), LastChildFill = false };
             header.Children.Add(SectionLabel("RADIO / PODCAST"));
-            StackPanel actions = new StackPanel { Orientation = Orientation.Horizontal };
-            actions.Children.Add(GhostButton("刷新电台", delegate { _engine.RadioDirectory(); }));
+            StackPanel actions = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Button refresh = GhostButton("刷新电台", delegate { _engine.RadioDirectory(); });
+            refresh.Margin = new Thickness(0.0, 0.0, 14.0, 0.0);
+            actions.Children.Add(refresh);
+
+            StackPanel radioSearchGroup = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center
+            };
             _radioSearch = new TextBox
             {
-                Width = 150.0,
-                Height = 26.0,
+                Width = 148.0,
+                Height = 28.0,
                 VerticalContentAlignment = VerticalAlignment.Center,
                 Style = Theme.S("Input"),
-                Tag = "搜索电台"
+                Tag = "搜索电台",
+                ToolTip = "按名称搜索电台，回车执行",
+                Margin = new Thickness(0.0, 0.0, 8.0, 0.0)
             };
             _radioSearch.KeyDown += delegate(object sender, KeyEventArgs e)
             {
@@ -1174,17 +1188,39 @@ namespace Hd2Qd.HD2Music
                     _engine.RadioSearch(_radioSearch.Text);
                 }
             };
-            actions.Children.Add(_radioSearch);
+            radioSearchGroup.Children.Add(_radioSearch);
             _radioSearchButton = GhostButton("搜索电台", delegate { _engine.RadioSearch(_radioSearch.Text); });
-            actions.Children.Add(_radioSearchButton);
-            actions.Children.Add(GhostButton("粘贴电台", delegate { _engine.RadioClipboard(); }));
+            _radioSearchButton.Margin = new Thickness(0.0, 0.0, 8.0, 0.0);
+            radioSearchGroup.Children.Add(_radioSearchButton);
+            Button radioPaste = GhostButton("粘贴电台", delegate { _engine.RadioClipboard(); });
+            radioPaste.ToolTip = "从剪贴板粘贴电台关键词";
+            radioPaste.Margin = new Thickness(0.0, 0.0, 14.0, 0.0);
+            radioSearchGroup.Children.Add(radioPaste);
+            actions.Children.Add(radioSearchGroup);
+
+            actions.Children.Add(new Border
+            {
+                Width = 1.0,
+                Height = 18.0,
+                Background = Theme.Grid,
+                Margin = new Thickness(0.0, 0.0, 16.0, 0.0),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+
+            StackPanel podcastFilterGroup = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center
+            };
             _podcastFilter = new TextBox
             {
-                Width = 120.0,
-                Height = 26.0,
+                Width = 126.0,
+                Height = 28.0,
                 VerticalContentAlignment = VerticalAlignment.Center,
                 Style = Theme.S("Input"),
-                Tag = "筛选播客节目"
+                Tag = "筛选播客节目",
+                ToolTip = "筛选当前播客节目，回车执行",
+                Margin = new Thickness(0.0, 0.0, 8.0, 0.0)
             };
             _podcastFilter.KeyDown += delegate(object sender, KeyEventArgs e)
             {
@@ -1193,10 +1229,16 @@ namespace Hd2Qd.HD2Music
                     _engine.PodcastFilter(_podcastFilter.Text);
                 }
             };
-            actions.Children.Add(_podcastFilter);
+            podcastFilterGroup.Children.Add(_podcastFilter);
             _podcastFilterButton = GhostButton("筛选", delegate { _engine.PodcastFilter(_podcastFilter.Text); });
-            actions.Children.Add(_podcastFilterButton);
-            actions.Children.Add(GhostButton("粘贴筛选", delegate { _engine.PodcastFilterClipboard(); }));
+            _podcastFilterButton.Margin = new Thickness(0.0, 0.0, 8.0, 0.0);
+            podcastFilterGroup.Children.Add(_podcastFilterButton);
+            Button filterPaste = GhostButton("粘贴筛选", delegate { _engine.PodcastFilterClipboard(); });
+            filterPaste.ToolTip = "从剪贴板粘贴节目筛选词";
+            filterPaste.Margin = new Thickness(0.0);
+            podcastFilterGroup.Children.Add(filterPaste);
+            actions.Children.Add(podcastFilterGroup);
+
             DockPanel.SetDock(actions, Dock.Right);
             header.Children.Add(actions);
             page.Children.Add(header);
@@ -1513,7 +1555,7 @@ namespace Hd2Qd.HD2Music
             body.Children.Add(links);
             body.Children.Add(new TextBlock
             {
-                Text = "插件 HD2QD.HD2Music 1.4.0 · " + (Ffmpeg.Embedded ? "内置解码器" : "外置解码器") + " · MIT",
+                Text = "插件 HD2QD.HD2Music 1.4.1 · " + (Ffmpeg.Embedded ? "内置解码器" : "外置解码器") + " · MIT",
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
