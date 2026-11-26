@@ -75,10 +75,14 @@ writes the state the in-game player reads. Clicking a song while the game is not
 start audio; the status strip turns yellow and says `STATUS 未启动游戏 · 启动游戏后即可播放`
 (or the engine's own "请先进入游戏并启用新版播放器" after a click).
 
-The plugin and the mod's Python helper (`网易云在线助手`) **cannot run at the same time**: both
-take `%LOCALAPPDATA%\HD2Phone\ncm_helper.lock`, and both write the same state files. The plugin
-starts that helper's lock lazily — only when the window or a command is used, never at manager
-launch. If the helper is already running, the window says so and publishes nothing.
+The plugin and the mod's Python helper (`网易云在线助手`) share
+`%LOCALAPPDATA%\HD2Phone\ncm_helper.lock`, so only one of them decodes at a time. If the helper
+is already running (F7 playback), the plugin detects the lock and **hands play commands to the
+helper through the same `ncm_cmd_*.txt` protocol the game uses**: clicking a song, a playlist's
+「播放全部」, a radio channel, an episode, or the transport controls still works; the tab shows
+`在线助手已接管播放` and mirrors the helper's title, position and lyrics. The plugin never writes
+state or spectrum while locked out. It takes the lock lazily — only when the window or a command
+is used, never at manager launch.
 
 ## What it reads and writes
 
@@ -152,7 +156,7 @@ the fallback window and the login window off-screen. It needs no game, network o
 Current output:
 
 ```
-  ok   assembly name HD2QD.HD2Music, version 1.1.5
+  ok   assembly name HD2QD.HD2Music, version 1.2.0
   ok   target framework .NETFramework,Version=v4.8
   ok   Api = 2 (a const the manager reads before running any code)
   ok   Kind = window
@@ -213,8 +217,9 @@ MIT — see [LICENSE](LICENSE).
   - `HD2QD.HD2Music.dll`：完整版，约 29 MB，内置 FFmpeg，首次启动自动释放。
   - `HD2QD.HD2Music-Lite.dll`：精简版，约 340 KB，自动查找 `ffmpeg.exe`：环境变量、设置页、助手 tools、插件目录、**PATH**、注册表 **App Paths**，以及 winget/scoop/chocolatey 常见位置。两个版本不要同时安装。
 - 播放需要游戏运行：播放器跟随 MOD 心跳，游戏退出即停止。未启动游戏时点击歌曲不会出声，底部状态栏会变黄并提示“未启动游戏 · 启动游戏后即可播放”（点击后显示引擎的“请先进入游戏并启用新版播放器”）。
-- 插件与压缩包里的 Python 助手**不能同时运行**（共用 `ncm_helper.lock`）；插件只在打开窗口或
-  执行命令时才占锁，不会在管理器启动时抢占。
+- 插件与 Python 助手共用 `ncm_helper.lock`，同一时间只有一个解码。助手已在运行（F7 播放）时，
+  插件会把点击的播放/切歌/音量/音质等命令写进 `ncm_cmd_*.txt` 转交助手执行；状态栏显示
+  “在线助手已接管播放”，标题、进度、歌词从助手状态同步。插件占锁时不写状态与频谱。
 - 状态字段与助手 1.2.3 的 `publish()` 逐项对照；游戏内“加载更多”相关的分页字段未写入，
   其余当前歌曲、歌词、队列、封面、频谱均一致。
 

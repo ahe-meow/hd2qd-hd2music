@@ -428,7 +428,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.1.5 · " + (Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.2.0 · " + (Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1440,7 +1440,7 @@ namespace Hd2Qd.HD2Music
             body.Children.Add(links);
             body.Children.Add(new TextBlock
             {
-                Text = "插件 HD2QD.HD2Music 1.1.5 · " + (Ffmpeg.Embedded ? "内置解码器" : "外置解码器") + " · MIT",
+                Text = "插件 HD2QD.HD2Music 1.2.0 · " + (Ffmpeg.Embedded ? "内置解码器" : "外置解码器") + " · MIT",
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1666,7 +1666,7 @@ namespace Hd2Qd.HD2Music
             _ffmpeg.Text = (Ffmpeg.Embedded ? "内置 · " : "外置 · ") + _engine.FfmpegPath;
             _ffmpeg.Foreground = File.Exists(_engine.FfmpegPath) ? Theme.Muted : Theme.Yellow;
             _sheetAccount.Text = string.IsNullOrEmpty(state.Account) ? "未登录" : state.Account;
-            _sheetLock.Text = _engine.IsLockedOut ? "网易云在线助手已在运行：本插件不会播放，也不会写状态文件。" : "";
+            _sheetLock.Text = _engine.IsLockedOut ? "网易云在线助手已在运行：点击播放会转交助手；本插件不写状态文件。" : "";
 
             _sysState.Text = stateName;
             _sysState.Foreground = state.State == "playing" ? Theme.Yellow : Theme.Ink;
@@ -1709,7 +1709,8 @@ namespace Hd2Qd.HD2Music
             }
             _statusNotice.Text = "STATUS " + reason;
             bool busy = state.State == "loading" || state.State == "buffering" || reason.Contains("正在");
-            _statusNotice.Foreground = (busy || !state.GameRunning || reason.Contains("游戏")) ? Theme.Yellow : Theme.Muted;
+            bool blocked = NoticeTakesPrecedence(reason);
+            _statusNotice.Foreground = (busy || blocked || !state.GameRunning || reason.Contains("游戏")) ? Theme.Yellow : Theme.Muted;
             _statusQueue.Text = "QUEUE " + state.Count;
             _statusQuality.Text = "QUALITY " + state.Quality.ToUpperInvariant();
             bool ffmpegReady = File.Exists(_engine.FfmpegPath);
@@ -1874,7 +1875,8 @@ namespace Hd2Qd.HD2Music
             return notice.Contains("登录") || notice.Contains("扫码") || notice.Contains("二维码")
                 || notice.Contains("COOKIE") || notice.Contains("短信") || notice.Contains("锁")
                 || notice.Contains("失败") || notice.Contains("不可用") || notice.Contains("中断")
-                || notice.Contains("版权") || notice.Contains("会员") || notice.Contains("助手已经在运行");
+                || notice.Contains("版权") || notice.Contains("会员") || notice.Contains("助手已经在运行")
+                || notice.Contains("转交") || notice.Contains("接管");
         }
 
         void PlayQueueAt(int index)

@@ -98,6 +98,8 @@ public sealed class Engine : IDisposable
 
 	private bool _lockedOut;
 
+	private static int _commandSerial;
+
 	private double _qrExpires;
 
 	private double _nextScan;
@@ -692,6 +694,174 @@ public sealed class Engine : IDisposable
 		}
 	}
 
+	/// <summary>The mod helper owns ncm_helper.lock whenever F7 plays. This plugin cannot decode
+	/// then, but both sides share ncm_cmd_*.txt: send the same commands the game UI sends so a
+	/// click in the manager still drives the helper that is actually playing.</summary>
+	void SendCommand(string line)
+	{
+		if (!_lockedOut || string.IsNullOrWhiteSpace(line))
+		{
+			return;
+		}
+		int number = Interlocked.Increment(ref _commandSerial);
+		string file = Path.Combine(Root, "ncm_cmd_hd2qd_" + number.ToString(CultureInfo.InvariantCulture) + "_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".txt");
+		try
+		{
+			Util.AtomicWrite(file, line + "\n");
+		}
+		catch
+		{
+		}
+		lock (_lock)
+		{
+			_notice = "已转交在线助手播放";
+		}
+	}
+
+	static Dictionary<string, string> HelperState()
+	{
+		var values = new Dictionary<string, string>(StringComparer.Ordinal);
+		string text = Util.ReadText(Path.Combine(Util.Root, "ncm_state.txt"));
+		if (string.IsNullOrEmpty(text))
+		{
+			return values;
+		}
+		foreach (string line in text.Split('\n'))
+		{
+			int at = line.IndexOf('=');
+			if (at > 0)
+			{
+				values[line.Substring(0, at)] = line.Substring(at + 1).Trim();
+			}
+		}
+		return values;
+	}
+
+	static string Value(Dictionary<string, string> state, string key)
+	{
+		return state.TryGetValue(key, out string text) ? text : "";
+	}
+
+	static int IntValue(Dictionary<string, string> state, string key)
+	{
+		return int.TryParse(Value(state, key), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) ? value : 0;
+	}
+
+	static double DoubleValue(Dictionary<string, string> state, string key)
+	{
+		return double.TryParse(Value(state, key), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ? value : 0.0;
+	}
+
+	static string HexEncode(string text)
+	{
+		var bytes = Encoding.UTF8.GetBytes(text ?? "");
+		var builder = new StringBuilder(bytes.Length * 2);
+		foreach (byte value in bytes)
+		{
+			builder.Append(value.ToString("x2"));
+		}
+		return builder.ToString();
+	}
+
+	void DelegateTrack(int index)
+	{
+		string listId;
+		lock (_lock)
+		{
+			if (index < 0 || index >= _queueTracks.Count)
+			{
+				return;
+			}
+			listId = _currentListId;
+		}
+		if (string.IsNullOrEmpty(listId))
+		{
+			return;
+		}
+		Dictionary<string, string> helper = HelperState();
+		if (Value(helper, "list_id") != listId || IntValue(helper, "count") <= index)
+		{
+			SendCommand("playlist " + listId);
+		}
+		ThreadPool.QueueUserWorkItem(delegate
+		{
+			for (int i = 0; i < 60; i++)
+			{
+				Thread.Sleep(250);
+				Dictionary<string, string> state = HelperState();
+				if (Value(state, "list_id") == listId && IntValue(state, "count") > index)
+				{
+					SendCommand("track_play " + listId + " " + (index + 1).ToString(CultureInfo.InvariantCulture));
+					return;
+				}
+			}
+			lock (_lock)
+			{
+				_notice = "在线助手未响应播放指令，请用 F7 播放";
+			}
+		});
+	}
+
+	void DelegateSearchPlay(int index)
+	{
+		string keyword;
+		lock (_lock)
+		{
+			keyword = _searchKeyword;
+		}
+		if (string.IsNullOrWhiteSpace(keyword))
+		{
+			return;
+		}
+		SendCommand("search " + HexEncode(keyword));
+		ThreadPool.QueueUserWorkItem(delegate
+		{
+			for (int i = 0; i < 40; i++)
+			{
+				Thread.Sleep(250);
+				Dictionary<string, string> state = HelperState();
+				if (Value(state, "search_state") == "ready" && Value(state, "list_id") == "search" && IntValue(state, "count") > index)
+				{
+					SendCommand("track_play search " + (index + 1).ToString(CultureInfo.InvariantCulture));
+					return;
+				}
+			}
+			lock (_lock)
+			{
+				_notice = "在线助手搜索未完成，请用 F7 播放";
+			}
+		});
+	}
+
+	void MirrorHelper(UiState obj)
+	{
+		Dictionary<string, string> state = HelperState();
+		if (state.Count == 0)
+		{
+			obj.Notice = "网易云在线助手已在运行，播放由助手接管";
+			return;
+		}
+		obj.State = Value(state, "state");
+		obj.Title = Value(state, "title");
+		obj.Artist = Value(state, "artist");
+		obj.PlaylistName = Value(state, "playlist");
+		obj.Index = Math.Max(0, IntValue(state, "index") - 1);
+		obj.Count = IntValue(state, "count");
+		obj.Pos = DoubleValue(state, "pos");
+		obj.Duration = DoubleValue(state, "duration");
+		obj.Volume = IntValue(state, "volume");
+		obj.Quality = Value(state, "quality");
+		obj.Order = Value(state, "order");
+		obj.LyricsEnabled = Value(state, "lyrics_on") == "1";
+		obj.Automix = Value(state, "automix") == "1";
+		obj.SeekReady = Value(state, "seek_ready") == "1";
+		obj.PreviousLyric = Value(state, "previous_lyric");
+		obj.Lyric = Value(state, "lyric");
+		obj.NextLyric = Value(state, "next_lyric");
+		obj.Translation = Value(state, "lyric_translation");
+		obj.Notice = string.IsNullOrEmpty(Value(state, "notice")) ? "在线助手已接管播放" : Value(state, "notice");
+	}
+
 	private void WorkerRun()
 	{
 		while (!_stopped)
@@ -965,6 +1135,10 @@ public sealed class Engine : IDisposable
 			obj.NextLyric = next;
 			obj.Translation = translation;
 			obj.LyricIndex = index;
+			if (_lockedOut)
+			{
+				MirrorHelper(obj);
+			}
 			return obj;
 		}
 	}
@@ -1624,6 +1798,11 @@ public sealed class Engine : IDisposable
 		{
 			return;
 		}
+		if (_lockedOut)
+		{
+			SendCommand("radio_play " + channel.Id);
+			return;
+		}
 		Dictionary<string, string> cookies = Api.Session.Cookies;
 		lock (_lock)
 		{
@@ -1917,6 +2096,11 @@ public sealed class Engine : IDisposable
 
 	public void Play(int index)
 	{
+		if (_lockedOut)
+		{
+			DelegateTrack(index);
+			return;
+		}
 		Post(delegate
 		{
 			StartPlayAt(index, 0.0);
@@ -1925,6 +2109,11 @@ public sealed class Engine : IDisposable
 
 	public void StartPlay(int index)
 	{
+		if (_lockedOut)
+		{
+			DelegateTrack(index);
+			return;
+		}
 		StartPlayAt(index, 0.0);
 	}
 
@@ -2101,6 +2290,11 @@ public sealed class Engine : IDisposable
 
 	public void Next()
 	{
+		if (_lockedOut)
+		{
+			SendCommand("next");
+			return;
+		}
 		Post(delegate
 		{
 			StartPlayAt(NextPosition(manual: true), 0.0);
@@ -2109,6 +2303,11 @@ public sealed class Engine : IDisposable
 
 	public void Previous()
 	{
+		if (_lockedOut)
+		{
+			SendCommand("prev");
+			return;
+		}
 		Post(delegate
 		{
 			int index;
@@ -2132,6 +2331,7 @@ public sealed class Engine : IDisposable
 	{
 		if (_lockedOut)
 		{
+			SendCommand("toggle");
 			return;
 		}
 		lock (_lock)
@@ -2159,6 +2359,16 @@ public sealed class Engine : IDisposable
 
 	public void Seek(double position)
 	{
+		if (_lockedOut)
+		{
+			Dictionary<string, string> state = HelperState();
+			string listId = Value(state, "list_id");
+			if (!string.IsNullOrEmpty(listId))
+			{
+				SendCommand("seek " + listId + " " + Value(state, "index") + " " + Value(state, "seek_serial") + " " + Number(position));
+			}
+			return;
+		}
 		ResetMix();
 		lock (_lock)
 		{
@@ -2198,6 +2408,11 @@ public sealed class Engine : IDisposable
 
 	public void StopPlayback()
 	{
+		if (_lockedOut)
+		{
+			SendCommand("stop");
+			return;
+		}
 		ResetMix();
 		if (Player != null)
 		{
@@ -2217,6 +2432,11 @@ public sealed class Engine : IDisposable
 
 	public void SetVolume(int volume)
 	{
+		if (_lockedOut)
+		{
+			SendCommand("vol_set " + volume.ToString(CultureInfo.InvariantCulture));
+			return;
+		}
 		if (Player != null)
 		{
 			Player.SetVolume(volume);
@@ -2225,6 +2445,14 @@ public sealed class Engine : IDisposable
 
 	public void SetQuality(string quality)
 	{
+		if (_lockedOut)
+		{
+			if (Qualities.Contains(quality))
+			{
+				SendCommand("quality " + quality);
+			}
+			return;
+		}
 		if (Qualities.Contains(quality))
 		{
 			ResetMix();
@@ -2240,6 +2468,11 @@ public sealed class Engine : IDisposable
 	{
 		if (!Orders.Contains(order))
 		{
+			return;
+		}
+		if (_lockedOut)
+		{
+			SendCommand("order " + order);
 			return;
 		}
 		ResetMix();
@@ -2259,6 +2492,11 @@ public sealed class Engine : IDisposable
 
 	public void SetAutomix(bool enabled)
 	{
+		if (_lockedOut)
+		{
+			SendCommand("automix " + (enabled ? "1" : "0"));
+			return;
+		}
 		lock (_lock)
 		{
 			_automix = enabled;
@@ -2284,6 +2522,11 @@ public sealed class Engine : IDisposable
 
 	public void SetLyrics(bool enabled)
 	{
+		if (_lockedOut)
+		{
+			SendCommand("lyrics " + (enabled ? "1" : "0"));
+			return;
+		}
 		lock (_lock)
 		{
 			_lyricsEnabled = enabled;
@@ -2333,6 +2576,11 @@ public sealed class Engine : IDisposable
 
 	public void SearchPlay(int index)
 	{
+		if (_lockedOut)
+		{
+			DelegateSearchPlay(index);
+			return;
+		}
 		lock (_lock)
 		{
 			if (index < 0 || index >= _searchResults.Count)
