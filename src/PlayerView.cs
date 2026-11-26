@@ -19,8 +19,6 @@ namespace Hd2Qd.HD2Music
     /// yellow.</summary>
     public sealed class PlayerView : UserControl
     {
-        internal const string WindowTitle = "HD2 音乐";
-
         readonly Engine _engine;
         readonly DispatcherTimer _tick;
         readonly DispatcherTimer _spectrumTick;
@@ -103,6 +101,8 @@ namespace Hd2Qd.HD2Music
 
         bool _draggingProgress;
         bool _suppressVolume;
+        bool _stopped;
+        bool _initialized;
         string _coverUrl = "";
         LoginWindow _login;
         Window _window;
@@ -146,43 +146,78 @@ namespace Hd2Qd.HD2Music
 
             Loaded += delegate
             {
-                ShowPage("console");
+                if (!_initialized)
+                {
+                    _initialized = true;
+                    ShowPage("console");
+                }
                 _tick.Start();
                 _spectrumTick.Start();
-                _window = Window.GetWindow(this);
-                if (_window != null)
+                Window host = Window.GetWindow(this);
+                if (host != null && host != _window)
                 {
+                    if (_window != null)
+                    {
+                        _window.PreviewKeyDown -= OnWindowKey;
+                    }
+                    _window = host;
                     _window.PreviewKeyDown += OnWindowKey;
                 }
                 Refresh();
             };
-            Unloaded += delegate
-            {
-                _tick.Stop();
-                _spectrumTick.Stop();
-                if (_window != null)
-                {
-                    _window.PreviewKeyDown -= OnWindowKey;
-                }
-                _engine.SetVisiblePlaylists(null);
-            };
         }
 
-        internal static Window Show(Window owner, Dictionary<string, object> host, Engine engine)
+        /// <summary>Stops the clocks and lets go of the mod's playlist covers. Called when the
+        /// manager closes the tab (its ×, Ctrl+W, the program ending); idempotent.</summary>
+        internal void Stop()
         {
-            PlayerView view = new PlayerView(engine);
+            if (_stopped)
+            {
+                return;
+            }
+            _stopped = true;
+            _tick.Stop();
+            _spectrumTick.Stop();
+            if (_window != null)
+            {
+                _window.PreviewKeyDown -= OnWindowKey;
+                _window = null;
+            }
+            try
+            {
+                if (_login != null && _login.IsVisible)
+                {
+                    _login.Close();
+                }
+            }
+            catch
+            {
+            }
+            try
+            {
+                _engine.SetVisiblePlaylists(null);
+            }
+            catch
+            {
+            }
+        }
+
+        /// <summary>A manager before 0.25.0 (no host["tab"]): a window with the manager's frame,
+        /// or a plain one when there is no such factory.</summary>
+        internal static Window ShowWindow(Window owner, Dictionary<string, object> host, FrameworkElement content, string title)
+        {
             Window window;
             if (host != null && host.TryGetValue("window", out object factory)
                 && factory is Func<string, FrameworkElement, Window> make)
             {
-                window = make(WindowTitle, view);
+                window = make(title, content);
             }
             else
             {
                 window = new Window
                 {
-                    Title = WindowTitle,
-                    Content = view,
+                    Title = title,
+                    Content = content,
                     Background = Theme.Ground900,
                     Foreground = Theme.Ink,
                     WindowStartupLocation = (owner != null) ? WindowStartupLocation.CenterOwner : WindowStartupLocation.CenterScreen
@@ -393,7 +428,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.0.0",
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.1.0",
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1413,7 +1448,7 @@ namespace Hd2Qd.HD2Music
             body.Children.Add(links);
             body.Children.Add(new TextBlock
             {
-                Text = "插件 HD2QD.HD2Music 1.0.0 · MIT",
+                Text = "插件 HD2QD.HD2Music 1.1.0 · MIT",
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,

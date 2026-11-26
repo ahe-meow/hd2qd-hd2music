@@ -75,6 +75,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckText(asm, plugin);
             CheckQr(asm);
             CheckFfmpeg(asm);
+            CheckTab(asm, engineOf(asm));
             BuildWindows(asm);
 
             Console.WriteLine(_failed == 0 ? "OK: all checks passed" : _failed + " check(s) failed");
@@ -289,6 +290,98 @@ namespace Hd2Qd.HD2Music.Verify
             }
         }
 
+        static object engineOf(Assembly asm)
+        {
+            return Activator.CreateInstance(asm.GetType("Hd2Qd.HD2Music.Engine"), Path.Combine(Path.GetTempPath(), "ffmpeg.exe"));
+        }
+
+        static void CheckTab(Assembly asm, object engine)
+        {
+            Type plugin = asm.GetType("Hd2Qd.HD2Music.Plugin");
+            Type player = asm.GetType("Hd2Qd.HD2Music.PlayerView");
+            if (plugin == null || player == null)
+            {
+                Fail("Plugin or PlayerView is missing");
+                return;
+            }
+            plugin.GetField("_engine", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, engine);
+            string tabTitle = null;
+            FrameworkElement tabBody = null;
+            Action tabClosed = null;
+            Action tabClose = null;
+            Action tabShow = null;
+            bool shown = false;
+            bool closed = false;
+            Func<string, FrameworkElement, Action, Dictionary<string, object>> tab =
+                (title, body, onClosed) =>
+                {
+                    tabTitle = title;
+                    tabBody = body;
+                    tabClosed = onClosed;
+                    tabShow = delegate { shown = true; };
+                    tabClose = delegate
+                    {
+                        closed = true;
+                        onClosed?.Invoke();
+                    };
+                    return new Dictionary<string, object>
+                    {
+                        ["show"] = tabShow,
+                        ["close"] = tabClose,
+                    };
+                };
+            var host = new Dictionary<string, object> { ["tab"] = tab, ["lang"] = "zh-CN" };
+            try
+            {
+                plugin.GetMethod("Open", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { null, host });
+                if (tabTitle != "HD2 音乐" || tabBody == null || tabBody.GetType() != player || tabClosed == null)
+                {
+                    Fail("host[\"tab\"] was not given the player and its title");
+                    return;
+                }
+                Pass("opens as a manager tab: \"" + tabTitle + "\"");
+                plugin.GetMethod("Open", BindingFlags.Public | BindingFlags.Static).Invoke(null, new object[] { null, host });
+                if (!shown)
+                {
+                    Fail("a second Open did not show the existing tab");
+                }
+                else
+                {
+                    Pass("a second Open shows the same tab, no second view");
+                }
+                tabClose();
+                if (!closed)
+                {
+                    Fail("the tab's closed action did not run");
+                }
+                else
+                {
+                    Pass("closing the tab runs the plugin's cleanup");
+                }
+            }
+            catch (Exception e)
+            {
+                Exception inner = e is TargetInvocationException tie ? tie.InnerException : e;
+                Fail("the tab path does not work: " + inner.GetType().Name + ": " + inner.Message);
+            }
+            finally
+            {
+                try
+                {
+                    if (tabBody != null)
+                    {
+                        player.GetMethod("Stop", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(tabBody, null);
+                    }
+                }
+                catch
+                {
+                }
+                plugin.GetField("_engine", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, null);
+                plugin.GetField("_showTab", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, null);
+                plugin.GetField("_view", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, null);
+            }
+        }
+
         static void CheckFfmpeg(Assembly asm)
         {
             Type ffmpeg = asm.GetType("Hd2Qd.HD2Music.Ffmpeg");
@@ -380,10 +473,10 @@ namespace Hd2Qd.HD2Music.Verify
                 }
 
                 // the window the manager hands over (host["window"]) receives that body
-                MethodInfo show = playerType.GetMethod("Show", BindingFlags.NonPublic | BindingFlags.Static);
+                MethodInfo show = playerType.GetMethod("ShowWindow", BindingFlags.NonPublic | BindingFlags.Static);
                 if (show == null)
                 {
-                    Fail("PlayerView.Show is missing");
+                    Fail("PlayerView.ShowWindow is missing");
                 }
                 else
                 {
@@ -394,14 +487,14 @@ namespace Hd2Qd.HD2Music.Verify
                         return new Window { Title = title, Content = body, Width = 1120, Height = 760 };
                     };
                     var host = new Dictionary<string, object> { ["window"] = frame };
-                    var window = (Window)show.Invoke(null, new object[] { null, host, engine });
+                    var window = (Window)show.Invoke(null, new object[] { null, host, view, "HD2 音乐" });
                     if (made.Count != 1 || string.IsNullOrEmpty(window.Title) || !(window.Content is FrameworkElement body2) || body2.GetType() != playerType)
                     {
                         Fail("the manager's frame did not receive the player body and its title");
                     }
                     else
                     {
-                        Pass("opens in the manager's frame: \"" + made[0] + "\"");
+                        Pass("fallback window for a manager without tabs: \"" + made[0] + "\"");
                     }
                     window.Close();
                 }

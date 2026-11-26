@@ -21,28 +21,71 @@ namespace Hd2Qd.HD2Music
 
         static Engine _engine;
         static Window _window;
+        static PlayerView _view;
+        static Action _showTab;
         static bool _hooked;
 
         public static string Title(string lang) => Words.Get(lang, "title");
 
         public static string Summary(string lang) => Words.Get(lang, "summary");
 
-        /// <summary>Kind "window": the card's Open. The player is a window of its own, drawn in
-        /// the manager's theme; host["window"] would add the manager's frame around it, and the
-        /// player already carries the same frame's colours.</summary>
+        /// <summary>Kind "window": the card's Open. In Quick Deploy 0.25.0 and later the player
+        /// is a tab of the manager's window (host["tab"]); an older manager gets the same
+        /// content in a window with the manager's frame.</summary>
         public static void Open(Window owner, Dictionary<string, object> host)
         {
+            if (_showTab != null)
+            {
+                try
+                {
+                    _showTab();
+                    return;
+                }
+                catch
+                {
+                    _showTab = null;
+                    _view = null;
+                }
+            }
+            if (_window != null && _window.IsVisible)
+            {
+                if (_window.WindowState == WindowState.Minimized)
+                {
+                    _window.WindowState = WindowState.Normal;
+                }
+                _window.Activate();
+                return;
+            }
+
             Engine engine = EnsureEngine(host);
-            if (_window == null || !_window.IsVisible)
+            string title = Title(Words.Lang(host));
+            PlayerView view = new PlayerView(engine);
+            _view = view;
+            if (host != null && host.TryGetValue("tab", out object factory)
+                && factory is Func<string, FrameworkElement, Action, Dictionary<string, object>> tab)
             {
-                _window = PlayerView.Show(owner, host, engine);
-                _window.Closed += delegate { _window = null; };
+                Dictionary<string, object> handle = tab(title, view, delegate
+                {
+                    _showTab = null;
+                    if (_view == view)
+                    {
+                        _view = null;
+                    }
+                    view.Stop();
+                });
+                _showTab = (handle != null && handle.TryGetValue("show", out object show)) ? show as Action : delegate { };
+                return;
             }
-            if (_window.WindowState == WindowState.Minimized)
+            _window = PlayerView.ShowWindow(owner, host, view, title);
+            _window.Closed += delegate
             {
-                _window.WindowState = WindowState.Normal;
-            }
-            _window.Activate();
+                _window = null;
+                if (_view == view)
+                {
+                    _view = null;
+                }
+                view.Stop();
+            };
         }
 
         /// <summary>Optional: commands added to the manager's command line, as rows of [name,

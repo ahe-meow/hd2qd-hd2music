@@ -1,12 +1,13 @@
 # HD2QD HD2 Music
 
 A plugin of [HD2 Mod Quick Deploy](https://github.com/pat-pat-patrick/hd2-mod-cli): the NetEase
-Cloud Music player of the **HD2 Music** mod, as a window of the manager. Sign in with a QR code,
+Cloud Music player of the **HD2 Music** mod, as a tab of the manager's window (Quick Deploy
+0.25.0 and later) or a window on an older manager. Sign in with a QR code,
 a cookie or an SMS code; browse playlists, search, the daily recommendation, private FM, radio
 and podcasts; play, seek and follow the lyrics — and the mod's in-game player, 2D/3D lyrics and
 spectrum keep working, because the plugin writes the same state files the mod's helper does.
 
-![The console: now playing, lyrics, spectrum, next up, and the player's state](docs/window.png)
+![The player as a tab: tab strip above, now playing, lyrics, spectrum, next up, and the player's state](docs/window.png)
 
 ## What it does
 
@@ -21,8 +22,9 @@ spectrum keep working, because the plugin writes the same state files the mod's 
 - **State for the mod**: now playing, progress, queue, cover (texture, preview and mini), the
   16-band spectrum and the timed world-lyric cues — all in `ncm_state.txt`,
   `ncm_spectrum.txt` and the `.dat` cover files the mod already reads.
-- **Manager integration**: the plugin's card in **Plugins**, the command `hd2music`, a body handed
-  to the manager's own window frame (`host["window"]`), and the manager's own tokens
+- **Manager integration**: the plugin's card in **Plugins**, the command `hd2music`, its body
+  handed to the manager's tab bar (`host["tab"]`, Quick Deploy 0.25.0+) with `host["window"]`
+  as the fallback, and the manager's own tokens
   (Ground900/700, Grid, Ink, Muted, Yellow, Blue, Bahnschrift + YaHei UI, Ghost/Primary buttons)
   through the shared `Theme`/`Ui.xaml` component set.
 
@@ -47,9 +49,11 @@ mono, and yellow is the only accent — the manager's own board, not a stock WPF
 
 ## Install
 
-1. HD2 Mod Quick Deploy **0.15.0 or later** (plugin Api 2).
+1. HD2 Mod Quick Deploy **0.25.0 or later** for the tab (plugin Api 2); 0.15.0–0.24.x still
+   works, as a window of its own.
 2. **Plugins** page → **Add plugin…** → `HD2QD.HD2Music.dll` (or drop the file on the page).
-3. Deploy **HD2 Music** in Arsenal, start the game, then open **HD2 Music** on the Plugins page.
+3. Deploy **HD2 Music** in Arsenal, start the game, then open **HD2 Music** on the Plugins page;
+   it appears as a tab beside the manager, and a second Open shows that same tab.
 4. The decoder travels inside the DLL: FFmpeg 6.1.1 essentials (~79 MB) is written once, next
    to the plugin or into the player's settings folder, when neither has an `ffmpeg.exe`. An
    existing file beside the plugin, in the settings folder, or chosen on the **设置** page is
@@ -132,7 +136,7 @@ needs no game, network or manager.
 Current output:
 
 ```
-  ok   assembly name HD2QD.HD2Music, version 1.0.0
+  ok   assembly name HD2QD.HD2Music, version 1.1.0
   ok   target framework .NETFramework,Version=v4.8
   ok   Api = 2 (a const the manager reads before running any code)
   ok   Kind = window
@@ -140,8 +144,11 @@ Current output:
   ok   references only .NET Framework assemblies (8)
   ok   QR encoder embedded (QRCoder, MIT): 29x29 matrix, no QRCoder.dll on disk
   ok   embedded ffmpeg extracted to a temp folder: 78 MB, SHA-256 matches
+  ok   opens as a manager tab: "HD2 音乐"
+  ok   a second Open shows the same tab, no second view
+  ok   closing the tab runs the plugin's cleanup
   ok   player view built off-screen and laid out on #0C0E11
-  ok   opens in the manager's frame: "HD2 音乐"
+  ok   fallback window for a manager without tabs: "HD2 音乐"
   ok   login window built off-screen and laid out: "登录 · HD2 音乐"
 OK: all checks passed
 ```
@@ -176,7 +183,7 @@ MIT — see [LICENSE](LICENSE).
 电台播客；播放、拖动进度、歌词同步。插件写入与助手相同的状态文件，因此游戏内播放器、2D/3D
 歌词和频谱照常工作。
 
-- 安装：管理器 0.15.0 以上 → 插件页 → 添加 `HD2QD.HD2Music.dll`。
+- 安装：管理器 0.25.0 以上 → 插件页 → 添加 `HD2QD.HD2Music.dll`；以标签页打开，再次“打开”会回到同一页签。旧版 0.15.0–0.24.x 回退为独立窗口。
 - 解码器已随 DLL 打包（FFmpeg 6.1.1 essentials，约 79 MB）：首次启动若插件旁与管理器设置目录
   都没有 `ffmpeg.exe`，插件会自动释放一份并校验 SHA-256；已有文件或「设置」页选择的路径优先。
 - 插件与压缩包里的 Python 助手**不能同时运行**（共用 `ncm_helper.lock`）；插件只在打开窗口或
