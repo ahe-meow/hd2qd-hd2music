@@ -34,6 +34,8 @@ namespace Hd2Qd.HD2Music
         string _matrix = "";
         bool _closing;
 
+        Button _openWebsiteButton;
+
         sealed class TabRef
         {
             public string Page;
@@ -119,7 +121,7 @@ namespace Hd2Qd.HD2Music
             root.Children.Add(content);
 
             DockPanel footer = new DockPanel { LastChildFill = false, Margin = new Thickness(0.0, 16.0, 0.0, 0.0) };
-            Button web = LinkButton("在浏览器登录 music.163.com", delegate
+            _openWebsiteButton = LinkButton("在浏览器登录 music.163.com", delegate
             {
                 try
                 {
@@ -129,7 +131,7 @@ namespace Hd2Qd.HD2Music
                 {
                 }
             });
-            footer.Children.Add(web);
+            footer.Children.Add(_openWebsiteButton);
             Button close = LinkButton("关闭", delegate { Close(); });
             DockPanel.SetDock(close, Dock.Right);
             footer.Children.Add(close);
@@ -458,6 +460,9 @@ namespace Hd2Qd.HD2Music
             _status.Text = state.QrResult == "success"
                 ? "登录成功"
                 : (string.IsNullOrEmpty(state.Notice) ? "正在获取二维码…" : state.Notice);
+            bool verify = state.QrResult == "verification";
+            _openWebsiteButton.Content = verify ? "打开官网 · 完成安全验证" : "在浏览器登录 music.163.com";
+            _openWebsiteButton.Foreground = verify ? Theme.Yellow : Theme.Muted;
             _cookieStatus.Text = _engine.CookieNotice;
             _smsStatus.Text = state.SmsNotice;
             if (state.QrMatrix != _matrix)

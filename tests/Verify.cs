@@ -75,6 +75,10 @@ namespace Hd2Qd.HD2Music.Verify
             CheckText(asm, plugin);
             CheckQr(asm);
             CheckFfmpeg(asm);
+            CheckBrowseApi(asm);
+            CheckBrowseState(asm);
+            CheckBrowseUi(asm);
+            CheckVerificationUi(asm);
             CheckQueuePersistence(asm);
             CheckTab(asm, engineOf(asm));
             BuildWindows(asm);
@@ -383,6 +387,88 @@ namespace Hd2Qd.HD2Music.Verify
                 plugin.GetField("_showTab", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, null);
                 plugin.GetField("_view", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, null);
             }
+        }
+
+        static void CheckBrowseApi(Assembly asm)
+        {
+            Type page = asm.GetType("Hd2Qd.HD2Music.BrowsePage`1");
+            if (page == null)
+            {
+                Fail("BrowsePage<T> is missing");
+                return;
+            }
+            foreach (string field in new[] { "Rows", "Offset", "More" })
+            {
+                if (page.GetField(field) == null)
+                {
+                    Fail("BrowsePage." + field + " is missing");
+                    return;
+                }
+            }
+            Type client = asm.GetType("Hd2Qd.HD2Music.NeteaseClient");
+            foreach (string method in new[] { "SearchTracksPage", "RecommendationPage", "SearchRadios" })
+            {
+                if (client.GetMethod(method) == null)
+                {
+                    Fail("NeteaseClient." + method + " is missing");
+                    return;
+                }
+            }
+            Pass("browse APIs present");
+        }
+
+        static void CheckBrowseState(Assembly asm)
+        {
+            Type ui = asm.GetType("Hd2Qd.HD2Music.UiState");
+            foreach (string field in new[] { "SearchMore", "SearchOffset", "RadioKeyword", "PodcastFilter", "PodcastFilterSerial", "RecommendMore", "AccountLoading", "LyricPrefix" })
+            {
+                if (ui.GetField(field) == null)
+                {
+                    Fail("UiState." + field + " is missing");
+                    return;
+                }
+            }
+            Type engine = asm.GetType("Hd2Qd.HD2Music.Engine");
+            foreach (string method in new[] { "SearchMore", "RadioSearch", "PodcastFilter" })
+            {
+                if (engine.GetMethod(method, BindingFlags.Instance | BindingFlags.Public) == null)
+                {
+                    Fail("Engine." + method + " is missing");
+                    return;
+                }
+            }
+            Pass("browse state fields and commands present");
+        }
+
+        static void CheckBrowseUi(Assembly asm)
+        {
+            Type player = asm.GetType("Hd2Qd.HD2Music.PlayerView");
+            foreach (string field in new[] { "_dailyButton", "_fmButton", "_stopButton", "_radioSearch", "_radioSearchButton", "_podcastFilter", "_podcastFilterButton" })
+            {
+                if (player.GetField(field, BindingFlags.Instance | BindingFlags.NonPublic) == null)
+                {
+                    Fail("PlayerView." + field + " is missing");
+                    return;
+                }
+            }
+            Pass("browse UI entries present");
+        }
+
+        static void CheckVerificationUi(Assembly asm)
+        {
+            Type login = asm.GetType("Hd2Qd.HD2Music.LoginWindow");
+            if (login.GetField("_openWebsiteButton", BindingFlags.Instance | BindingFlags.NonPublic) == null)
+            {
+                Fail("LoginWindow._openWebsiteButton is missing");
+                return;
+            }
+            Type player = asm.GetType("Hd2Qd.HD2Music.PlayerView");
+            if (player.GetField("_lyricPrefixLine", BindingFlags.Instance | BindingFlags.NonPublic) == null)
+            {
+                Fail("PlayerView._lyricPrefixLine is missing");
+                return;
+            }
+            Pass("verification link and lyric prefix preview present");
         }
 
         static void CheckQueuePersistence(Assembly asm)

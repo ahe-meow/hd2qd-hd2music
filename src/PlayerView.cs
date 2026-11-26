@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -39,6 +40,8 @@ namespace Hd2Qd.HD2Music
         TextBlock _meta;
         TextBlock _previous;
         TextBlock _lyric;
+
+        TextBlock _lyricPrefixLine;
         TextBlock _translation;
         TextBlock _next;
         TextBlock _notice;
@@ -71,6 +74,20 @@ namespace Hd2Qd.HD2Music
         string _queueSignature = "";
 
         TextBox _search;
+
+        Button _dailyButton;
+
+        Button _fmButton;
+
+        Button _stopButton;
+
+        TextBox _radioSearch;
+
+        Button _radioSearchButton;
+
+        TextBox _podcastFilter;
+
+        Button _podcastFilterButton;
         ListBox _results;
         TextBlock _searchEmpty;
         TextBlock _searchHint;
@@ -428,7 +445,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.3.0 · " + (Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.4.0 · " + (Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -620,6 +637,15 @@ namespace Hd2Qd.HD2Music
                 Margin = new Thickness(0.0, 6.0, 0.0, 4.0)
             };
             lyrics.Children.Add(_lyric);
+            _lyricPrefixLine = new TextBlock
+            {
+                Text = "",
+                FontSize = 12.0,
+                FontFamily = Theme.Font("Mono"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0.0, 0.0, 0.0, 4.0)
+            };
+            lyrics.Children.Add(_lyricPrefixLine);
             _translation = new TextBlock
             {
                 Text = "",
@@ -931,6 +957,10 @@ namespace Hd2Qd.HD2Music
                 Refresh();
             });
             actions.Children.Add(_recommendedButton);
+            _dailyButton = GhostButton("每日推荐", delegate { _engine.Daily(); });
+            actions.Children.Add(_dailyButton);
+            _fmButton = GhostButton("私人 FM", delegate { _engine.Fm(); });
+            actions.Children.Add(_fmButton);
             actions.Children.Add(GhostButton("刷新", delegate
             {
                 _engine.RefreshAccount();
@@ -997,6 +1027,11 @@ namespace Hd2Qd.HD2Music
             playAll.MinHeight = 28.0;
             playAll.Margin = new Thickness(0.0);
             queueActions.Children.Add(playAll);
+            _stopButton = GhostButton("STOP", delegate { _engine.StopPlayback(); });
+            _stopButton.Height = 28.0;
+            _stopButton.MinHeight = 28.0;
+            _stopButton.Margin = new Thickness(6.0, 0.0, 0.0, 0.0);
+            queueActions.Children.Add(_stopButton);
             DockPanel.SetDock(queueActions, Dock.Right);
             header.Children.Add(queueActions);
             page.Children.Add(header);
@@ -1124,6 +1159,44 @@ namespace Hd2Qd.HD2Music
             header.Children.Add(SectionLabel("RADIO / PODCAST"));
             StackPanel actions = new StackPanel { Orientation = Orientation.Horizontal };
             actions.Children.Add(GhostButton("刷新电台", delegate { _engine.RadioDirectory(); }));
+            _radioSearch = new TextBox
+            {
+                Width = 150.0,
+                Height = 26.0,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Style = Theme.S("Input"),
+                Tag = "搜索电台"
+            };
+            _radioSearch.KeyDown += delegate(object sender, KeyEventArgs e)
+            {
+                if (e.Key == Key.Return)
+                {
+                    _engine.RadioSearch(_radioSearch.Text);
+                }
+            };
+            actions.Children.Add(_radioSearch);
+            _radioSearchButton = GhostButton("搜索电台", delegate { _engine.RadioSearch(_radioSearch.Text); });
+            actions.Children.Add(_radioSearchButton);
+            actions.Children.Add(GhostButton("粘贴电台", delegate { _engine.RadioClipboard(); }));
+            _podcastFilter = new TextBox
+            {
+                Width = 120.0,
+                Height = 26.0,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Style = Theme.S("Input"),
+                Tag = "筛选播客节目"
+            };
+            _podcastFilter.KeyDown += delegate(object sender, KeyEventArgs e)
+            {
+                if (e.Key == Key.Return)
+                {
+                    _engine.PodcastFilter(_podcastFilter.Text);
+                }
+            };
+            actions.Children.Add(_podcastFilter);
+            _podcastFilterButton = GhostButton("筛选", delegate { _engine.PodcastFilter(_podcastFilter.Text); });
+            actions.Children.Add(_podcastFilterButton);
+            actions.Children.Add(GhostButton("粘贴筛选", delegate { _engine.PodcastFilterClipboard(); }));
             DockPanel.SetDock(actions, Dock.Right);
             header.Children.Add(actions);
             page.Children.Add(header);
@@ -1440,7 +1513,7 @@ namespace Hd2Qd.HD2Music
             body.Children.Add(links);
             body.Children.Add(new TextBlock
             {
-                Text = "插件 HD2QD.HD2Music 1.3.0 · " + (Ffmpeg.Embedded ? "内置解码器" : "外置解码器") + " · MIT",
+                Text = "插件 HD2QD.HD2Music 1.4.0 · " + (Ffmpeg.Embedded ? "内置解码器" : "外置解码器") + " · MIT",
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1642,6 +1715,17 @@ namespace Hd2Qd.HD2Music
                 _lyric.Foreground = Theme.Ink;
             }
             _previous.Text = hasLyric ? state.PreviousLyric : "";
+            string prefix = hasLyric ? (state.LyricPrefix ?? "") : "";
+            string whole = hasLyric ? (state.Lyric ?? "") : "";
+            _lyricPrefixLine.Inlines.Clear();
+            if (prefix.Length > 0)
+            {
+                _lyricPrefixLine.Inlines.Add(new Run(prefix) { Foreground = Theme.Yellow });
+            }
+            if (whole.Length > prefix.Length)
+            {
+                _lyricPrefixLine.Inlines.Add(new Run(whole.Substring(prefix.Length)) { Foreground = Theme.Muted });
+            }
             _translation.Text = hasLyric ? state.Translation : "";
             _next.Text = hasLyric && !string.IsNullOrEmpty(state.NextLyric) ? "NEXT   " + state.NextLyric : "";
             _notice.Text = state.Notice ?? "";

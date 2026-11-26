@@ -40,6 +40,22 @@ public sealed class UiState
 
 	public string SearchState = "";
 
+	public string SearchMore = "";
+
+	public int SearchOffset;
+
+	public string RadioKeyword = "";
+
+	public string PodcastFilter = "";
+
+	public int PodcastFilterSerial;
+
+	public string RecommendMore = "";
+
+	public bool AccountLoading;
+
+	public string LyricPrefix = "";
+
 	public string RadioState = "";
 
 	public string PodcastState = "";
