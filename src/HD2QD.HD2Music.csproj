@@ -38,6 +38,7 @@
   <ItemGroup>
     <Compile Include="AccountInfo.cs" />
     <Compile Include="ApiException.cs" />
+    <Compile Include="BrowsePage.cs" />
     <Compile Include="CoverArt.cs" />
     <Compile Include="CoverService.cs" />
     <Compile Include="Engine.cs" />

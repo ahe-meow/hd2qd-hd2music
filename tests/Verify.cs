@@ -75,6 +75,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckText(asm, plugin);
             CheckQr(asm);
             CheckFfmpeg(asm);
+            CheckBrowseApi(asm);
             CheckQueuePersistence(asm);
             CheckTab(asm, engineOf(asm));
             BuildWindows(asm);
@@ -383,6 +384,34 @@ namespace Hd2Qd.HD2Music.Verify
                 plugin.GetField("_showTab", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, null);
                 plugin.GetField("_view", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, null);
             }
+        }
+
+        static void CheckBrowseApi(Assembly asm)
+        {
+            Type page = asm.GetType("Hd2Qd.HD2Music.BrowsePage`1");
+            if (page == null)
+            {
+                Fail("BrowsePage<T> is missing");
+                return;
+            }
+            foreach (string field in new[] { "Rows", "Offset", "More" })
+            {
+                if (page.GetField(field) == null)
+                {
+                    Fail("BrowsePage." + field + " is missing");
+                    return;
+                }
+            }
+            Type client = asm.GetType("Hd2Qd.HD2Music.NeteaseClient");
+            foreach (string method in new[] { "SearchTracksPage", "RecommendationPage", "SearchRadios" })
+            {
+                if (client.GetMethod(method) == null)
+                {
+                    Fail("NeteaseClient." + method + " is missing");
+                    return;
+                }
+            }
+            Pass("browse APIs present");
         }
 
         static void CheckQueuePersistence(Assembly asm)

@@ -413,6 +413,134 @@ public sealed class NeteaseClient
 		return TrackRows(obj);
 	}
 
+	public BrowsePage<Track> SearchTracksPage(string keyword, Dictionary<string, string> cookies, int offset)
+	{
+		Session session = SideSession("ncm_song_search.json");
+		session.Cookies.Clear();
+		foreach (KeyValuePair<string, string> cookie in cookies)
+		{
+			session.Cookies[cookie.Key] = cookie.Value;
+		}
+		Dictionary<string, object> dictionary = ApiCallOn(session, "/api/cloudsearch/pc", new Dictionary<string, object>
+		{
+			{ "s", keyword },
+			{ "type", 1 },
+			{ "limit", 25 },
+			{ "offset", offset }
+		}, "POST");
+		if ((int)Util.Long(dictionary, "code", 0L) != 200)
+		{
+			throw new ApiException("search request failed");
+		}
+		Dictionary<string, object> result = Util.Obj(dictionary.ContainsKey("result") ? dictionary["result"] : null);
+		var page = new BrowsePage<Track>();
+		page.Rows = TrackRows((result != null && result.ContainsKey("songs")) ? result["songs"] : null).Take(25).ToList();
+		page.Offset = Math.Max(0, offset) + page.Rows.Count;
+		long total = Util.Long(result, "songCount", 0L);
+		page.More = page.Rows.Count > 0 && ((total > 0 && page.Offset < total) || page.Rows.Count == 25);
+		return page;
+	}
+
+	public BrowsePage<Playlist> RecommendationPage(int offset, HashSet<string> exclude)
+	{
+		Session session = SideSession("ncm_public_recommendations.json");
+		Dictionary<string, object> dictionary = ApiCallOn(session, "/api/playlist/list", new Dictionary<string, object>
+		{
+			{ "cat", "全部" },
+			{ "order", "hot" },
+			{ "limit", 8 },
+			{ "offset", offset },
+			{ "total", true }
+		}, "POST");
+		if ((int)Util.Long(dictionary, "code", 0L) != 200)
+		{
+			throw new ApiException("playlist page request failed");
+		}
+		var page = new BrowsePage<Playlist>();
+		int next = Math.Max(0, offset);
+		foreach (object item in Util.List(dictionary.ContainsKey("playlists") ? dictionary["playlists"] : null))
+		{
+			Dictionary<string, object> row = Util.Obj(item);
+			next++;
+			if (row == null)
+			{
+				continue;
+			}
+			string id = Util.Str(row, "id", "");
+			string name = Util.Clean(Util.Str(row, "name", ""));
+			if (string.IsNullOrEmpty(id) || !id.All(char.IsDigit) || string.IsNullOrEmpty(name)
+				|| (exclude != null && exclude.Contains(id)))
+			{
+				continue;
+			}
+			page.Rows.Add(new Playlist
+			{
+				Id = id,
+				Name = name.Length > 120 ? name.Substring(0, 120) : name,
+				CoverUrl = Util.Str(row, "picUrl", Util.Str(row, "coverImgUrl", ""))
+			});
+			if (exclude != null)
+			{
+				exclude.Add(id);
+			}
+			if (page.Rows.Count == 8)
+			{
+				break;
+			}
+		}
+		page.Offset = next;
+		page.More = Util.Bool(dictionary, "more", page.Rows.Count == 8) && page.Rows.Count > 0;
+		return page;
+	}
+
+	public List<RadioChannel> SearchRadios(string keyword, Dictionary<string, string> cookies)
+	{
+		if (string.IsNullOrWhiteSpace(keyword))
+		{
+			return new List<RadioChannel>();
+		}
+		Session session = SideSession("ncm_radio_directory.json");
+		session.Cookies.Clear();
+		foreach (KeyValuePair<string, string> cookie in cookies)
+		{
+			session.Cookies[cookie.Key] = cookie.Value;
+		}
+		Dictionary<string, object> dictionary = ApiCallOn(session, "/api/cloudsearch/pc", new Dictionary<string, object>
+		{
+			{ "s", keyword },
+			{ "type", 1009 },
+			{ "limit", 25 },
+			{ "offset", 0 }
+		}, "POST");
+		if ((int)Util.Long(dictionary, "code", 0L) != 200)
+		{
+			throw new ApiException("radio search request failed");
+		}
+		Dictionary<string, object> result = Util.Obj(dictionary.ContainsKey("result") ? dictionary["result"] : null);
+		var list = new List<RadioChannel>();
+		foreach (object item in Util.List((result != null && result.ContainsKey("djRadios")) ? result["djRadios"] : null).Take(25))
+		{
+			Dictionary<string, object> row = Util.Obj(item);
+			if (row == null)
+			{
+				continue;
+			}
+			string id = Util.Str(row, "id", "");
+			string name = Util.Clean(Util.Str(row, "name", ""));
+			if (string.IsNullOrEmpty(id) || !id.All(char.IsDigit) || string.IsNullOrEmpty(name))
+			{
+				continue;
+			}
+			list.Add(new RadioChannel
+			{
+				Id = id,
+				Name = name,
+				Description = Util.Clean(Util.Str(row, "desc", Util.Str(row, "category", "")))
+			});
+		}
+		return list;
+	}
+
 	public List<Track> SearchTracks(string keyword, Dictionary<string, string> cookies)
 	{
 		Session session = SideSession("ncm_song_search.json");
