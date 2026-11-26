@@ -428,7 +428,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.1.3 · " + (Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.1.4 · " + (Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -439,7 +439,9 @@ namespace Hd2Qd.HD2Music
 
             StackPanel left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             _statusNotice = StatusPart(left, "STATUS —");
-            _statusNotice.MaxWidth = 340.0;
+            _statusNotice.MaxWidth = 420.0;
+            _statusNotice.FontSize = 9.5;
+            _statusNotice.FontWeight = FontWeights.SemiBold;
             _statusNotice.TextTrimming = TextTrimming.CharacterEllipsis;
             _statusAccount = StatusPart(left, "ACCOUNT —");
             _statusQueue = StatusPart(left, "QUEUE 0");
@@ -1438,7 +1440,7 @@ namespace Hd2Qd.HD2Music
             body.Children.Add(links);
             body.Children.Add(new TextBlock
             {
-                Text = "插件 HD2QD.HD2Music 1.1.3 · " + (Ffmpeg.Embedded ? "内置解码器" : "外置解码器") + " · MIT",
+                Text = "插件 HD2QD.HD2Music 1.1.4 · " + (Ffmpeg.Embedded ? "内置解码器" : "外置解码器") + " · MIT",
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1692,7 +1694,8 @@ namespace Hd2Qd.HD2Music
             string reason = state.Notice;
             if (string.IsNullOrWhiteSpace(reason))
             {
-                reason = state.State == "loading" ? "正在读取…"
+                reason = !state.GameRunning ? "未启动游戏 · 启动游戏后即可播放"
+                    : state.State == "loading" ? "正在读取…"
                     : state.State == "buffering" ? "缓冲中…"
                     : state.State == "playing" ? "播放中"
                     : state.State == "paused" ? "已暂停"
@@ -1700,7 +1703,8 @@ namespace Hd2Qd.HD2Music
                     : "空闲";
             }
             _statusNotice.Text = "STATUS " + reason;
-            _statusNotice.Foreground = (state.State == "loading" || state.State == "buffering" || reason.Contains("正在")) ? Theme.Yellow : Theme.Muted;
+            bool busy = state.State == "loading" || state.State == "buffering" || reason.Contains("正在");
+            _statusNotice.Foreground = (busy || !state.GameRunning || reason.Contains("游戏")) ? Theme.Yellow : Theme.Muted;
             _statusQueue.Text = "QUEUE " + state.Count;
             _statusQuality.Text = "QUALITY " + state.Quality.ToUpperInvariant();
             bool ffmpegReady = File.Exists(_engine.FfmpegPath);
@@ -1862,6 +1866,13 @@ namespace Hd2Qd.HD2Music
         void PlayQueueAt(int index)
         {
             UiState state = _engine.Snapshot();
+            if (!state.GameRunning)
+            {
+                // let the engine write its "start the game first" notice even when the
+                // clicked row is the stale current one
+                _engine.Play(index);
+                return;
+            }
             if (state.Index == index && (state.State == "playing" || state.State == "paused" || state.State == "loading"))
             {
                 return;

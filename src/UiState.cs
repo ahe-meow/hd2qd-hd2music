@@ -8,6 +8,8 @@ public sealed class UiState
 
 	public string Notice = "";
 
+	public bool GameRunning;
+
 	public string State = "idle";
 
 	public string Title = "";

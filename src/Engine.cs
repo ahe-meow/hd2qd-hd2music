@@ -923,6 +923,7 @@ public sealed class Engine : IDisposable
 			{
 				Account = _account,
 				Notice = _notice,
+				GameRunning = Player != null && Player.GameWatch != null && Player.GameWatch.Token != null,
 				State = _state,
 				Title = ((track != null) ? track.Title : ""),
 				Artist = ((track != null) ? track.Artist : ""),

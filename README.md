@@ -70,6 +70,11 @@ registry views), and the usual winget, scoop and chocolatey locations. If none i
 status strip says `FFMPEG MISSING` and the **设置** page can point at one. `HD2MUSIC_FFMPEG`
 overrides both.
 
+Playback needs the game: the player follows the mod's heartbeat, stops when the game exits, and
+writes the state the in-game player reads. Clicking a song while the game is not running does not
+start audio; the status strip turns yellow and says `STATUS 未启动游戏 · 启动游戏后即可播放`
+(or the engine's own "请先进入游戏并启用新版播放器" after a click).
+
 The plugin and the mod's Python helper (`网易云在线助手`) **cannot run at the same time**: both
 take `%LOCALAPPDATA%\HD2Phone\ncm_helper.lock`, and both write the same state files. The plugin
 starts that helper's lock lazily — only when the window or a command is used, never at manager
@@ -147,7 +152,7 @@ the fallback window and the login window off-screen. It needs no game, network o
 Current output:
 
 ```
-  ok   assembly name HD2QD.HD2Music, version 1.1.3
+  ok   assembly name HD2QD.HD2Music, version 1.1.4
   ok   target framework .NETFramework,Version=v4.8
   ok   Api = 2 (a const the manager reads before running any code)
   ok   Kind = window
@@ -207,6 +212,7 @@ MIT — see [LICENSE](LICENSE).
 - 安装：管理器 0.25.0 以上 → 插件页 → 添加**其中一个**文件；以标签页打开，再次“打开”会回到同一页签。旧版 0.15.0–0.24.x 回退为独立窗口。
   - `HD2QD.HD2Music.dll`：完整版，约 29 MB，内置 FFmpeg，首次启动自动释放。
   - `HD2QD.HD2Music-Lite.dll`：精简版，约 340 KB，自动查找 `ffmpeg.exe`：环境变量、设置页、助手 tools、插件目录、**PATH**、注册表 **App Paths**，以及 winget/scoop/chocolatey 常见位置。两个版本不要同时安装。
+- 播放需要游戏运行：播放器跟随 MOD 心跳，游戏退出即停止。未启动游戏时点击歌曲不会出声，底部状态栏会变黄并提示“未启动游戏 · 启动游戏后即可播放”（点击后显示引擎的“请先进入游戏并启用新版播放器”）。
 - 插件与压缩包里的 Python 助手**不能同时运行**（共用 `ncm_helper.lock`）；插件只在打开窗口或
   执行命令时才占锁，不会在管理器启动时抢占。
 - 状态字段与助手 1.2.3 的 `publish()` 逐项对照；游戏内“加载更多”相关的分页字段未写入，
