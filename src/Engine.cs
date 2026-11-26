@@ -2117,7 +2117,7 @@ public sealed class Engine : IDisposable
 		StartPlayAt(index, 0.0);
 	}
 
-	private void StartPlayAt(int index, double position)
+	private void StartPlayAt(int index, double position, bool keepResumeAttempts = false)
 	{
 		if (_lockedOut)
 		{
@@ -2154,7 +2154,10 @@ public sealed class Engine : IDisposable
 			_lyricsSong = "";
 			_seeking = false;
 			_resumePosition = null;
-			_resumeAttempts = 0;
+			if (!keepResumeAttempts)
+			{
+				_resumeAttempts = 0;
+			}
 		}
 		string text;
 		try
@@ -2570,8 +2573,19 @@ public sealed class Engine : IDisposable
 			_state = "buffering";
 			_notice = "音源连接中断，正在续播当前歌曲…";
 		}
+		double duration = TrackDuration();
+		if (duration > 0.0 && endedPosition >= duration - Math.Max(1.5, Math.Min(5.0, duration * 0.025)))
+		{
+			// the stream ended just before its declared duration: advance instead of
+			// replaying the last half-second over and over
+			Post(delegate
+			{
+				Next();
+			});
+			return;
+		}
 		Thread.Sleep(450 * (resumeAttempts + 1));
-		StartPlayAt(index, Math.Max(0.0, endedPosition));
+		StartPlayAt(index, Math.Max(0.0, endedPosition), keepResumeAttempts: true);
 	}
 
 	public void SearchPlay(int index)

@@ -523,7 +523,9 @@ public sealed class StreamPlayer
 				byte[] array2 = ReadPcm(decoder, 17640);
 				if (array2.Length == 0)
 				{
-					flag = decoder.WaitForExit(1000) && decoder.ExitCode == 0 && (num2 <= 0.0 || num >= num2 - Math.Max(1.5, Math.Min(5.0, num2 * 0.025)));
+					// A CDN often closes the connection with a non-zero code at EOF. Once the
+					// decoded audio has reached the track's end, that is a normal finish.
+					flag = decoder.WaitForExit(1000) && (num2 <= 0.0 || num >= num2 - Math.Max(1.5, Math.Min(5.0, num2 * 0.025)));
 					lock (_lock)
 					{
 						NextTrack nextTrack = ((flag && _transition == null && !_halt.IsSet) ? _prefetch : null);
