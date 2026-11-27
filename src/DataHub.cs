@@ -55,6 +55,8 @@ sealed class DataHub
 
 	byte[] _media;
 
+	string _mediaSession;
+
 	DateTime _nextScan;
 
 	string _note;
@@ -103,6 +105,16 @@ sealed class DataHub
 		if (string.Equals(request, _approved, StringComparison.Ordinal))
 		{
 			return;
+		}
+		// the cached payload belongs to one build. Swap the deployed mod without restarting the
+		// manager and the previous build's bytes would be handed to the new shell, which sits in
+		// the same folder and asks under a different session: decrypt garbage, give up silently.
+		string asked = request.Substring(0, request.IndexOf(':'));
+		if (_media != null && !string.Equals(asked, _mediaSession, StringComparison.OrdinalIgnoreCase))
+		{
+			_media = null;
+			_mediaSession = null;
+			_nextScan = DateTime.MinValue;
 		}
 		if (_media == null && !FindMedia(request))
 		{
@@ -201,6 +213,7 @@ sealed class DataHub
 					continue;
 				}
 				_media = data;
+				_mediaSession = session;
 				_note = null;
 				return true;
 			}
