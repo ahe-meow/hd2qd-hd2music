@@ -49,6 +49,8 @@ namespace Hd2Qd.HD2Music
         ListBox _lyricSheet;
         string _lyricSheetSignature = "";
         int _lyricShown = -1;
+
+        bool _lyricRebuilt;
         // a few blank rows at the end let the last lines centre too; none before the first
         const int LyricPad = 6;
 
@@ -489,7 +491,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.8.8 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.8.9 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1017,9 +1019,11 @@ namespace Hd2Qd.HD2Music
             // browsing a playlist shows its songs here; neither the queue nor the song changes
             _libraryDetail = new Grid { Visibility = Visibility.Collapsed, Background = Theme.Ground900 };
             _libraryDetail.RowDefinitions.Add(new RowDefinition { Height = new GridLength(42.0) });
+            _libraryDetail.RowDefinitions.Add(new RowDefinition { Height = new GridLength(34.0) });
             _libraryDetail.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.0, GridUnitType.Star) });
+            // tool row: same three-column grammar as the cards above — action left,
+            // search centred in the free space, action right
             Grid detailHead = new Grid { Margin = new Thickness(14.0, 0.0, 14.0, 0.0) };
-            detailHead.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             detailHead.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             detailHead.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
             detailHead.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1029,25 +1033,6 @@ namespace Hd2Qd.HD2Music
                 _libraryBrowse.Visibility = Visibility.Visible;
             });
             detailHead.Children.Add(back);
-
-            StackPanel titleBlock = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14.0, 0.0, 0.0, 0.0) };
-            TextBlock where = Mono("曲库", 9.0, Theme.Muted);
-            titleBlock.Children.Add(where);
-            _detailCount = Mono("0", 9.0, Theme.Muted);
-            _detailCount.Margin = new Thickness(10.0, 0.0, 0.0, 0.0);
-            titleBlock.Children.Add(_detailCount);
-            _detailTitle = new TextBlock
-            {
-                Text = "",
-                FontSize = 12.0,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = Theme.Ink,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(10.0, 0.0, 0.0, 0.0)
-            };
-            titleBlock.Children.Add(_detailTitle);
-            Grid.SetColumn(titleBlock, 1);
-            detailHead.Children.Add(titleBlock);
 
             StackPanel search = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             _detailSearch = new TextBox
@@ -1069,13 +1054,43 @@ namespace Hd2Qd.HD2Music
             searchButton.FontSize = 10.0;
             searchButton.Margin = new Thickness(6.0, 0.0, 0.0, 0.0);
             search.Children.Add(searchButton);
-            Grid.SetColumn(search, 2);
+            Grid.SetColumn(search, 1);
             detailHead.Children.Add(search);
 
             Button playAll = GhostButton("全部播放", delegate { _engine.PlayPreview(); });
-            Grid.SetColumn(playAll, 3);
+            Grid.SetColumn(playAll, 2);
             detailHead.Children.Add(playAll);
             _libraryDetail.Children.Add(detailHead);
+
+            // title band uses the same SectionLabel/Mono vocabulary as the other tables and
+            // carries a bottom rule, so it reads as the header of the list below it
+            Border titleBand = new Border
+            {
+                Padding = new Thickness(14.0, 0.0, 14.0, 0.0),
+                BorderBrush = Theme.Grid,
+                BorderThickness = new Thickness(0.0, 0.0, 0.0, 1.0)
+            };
+            DockPanel titleRow = new DockPanel { LastChildFill = false };
+            StackPanel titleBlock = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            titleBlock.Children.Add(SectionLabel("曲库"));
+            _detailCount = Mono("0", 9.0, Theme.Muted);
+            _detailCount.Margin = new Thickness(12.0, 0.0, 0.0, 0.0);
+            titleBlock.Children.Add(_detailCount);
+            _detailTitle = new TextBlock
+            {
+                Text = "",
+                FontSize = 12.0,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = Theme.Ink,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(12.0, 0.0, 0.0, 0.0)
+            };
+            titleBlock.Children.Add(_detailTitle);
+            titleRow.Children.Add(titleBlock);
+            titleBand.Child = titleRow;
+            Grid.SetRow(titleBand, 1);
+            _libraryDetail.Children.Add(titleBand);
 
             _detailTracks = new ListBox
             {
@@ -1086,7 +1101,7 @@ namespace Hd2Qd.HD2Music
             };
             ScrollViewer.SetVerticalScrollBarVisibility(_detailTracks, ScrollBarVisibility.Auto);
             ScrollViewer.SetHorizontalScrollBarVisibility(_detailTracks, ScrollBarVisibility.Disabled);
-            Grid.SetRow(_detailTracks, 1);
+            Grid.SetRow(_detailTracks, 2);
             _libraryDetail.Children.Add(_detailTracks);
             body.Children.Add(_libraryDetail);
 
@@ -1608,11 +1623,13 @@ namespace Hd2Qd.HD2Music
                     _lyricSheet.Items.Add(BlankLyricRow());
                 }
                 _lyricShown = -1;
+                _lyricRebuilt = true;
             }
             int current = state.LyricIndex;
-            if (current != _lyricShown)
+            if (current != _lyricShown || _lyricRebuilt)
             {
                 _lyricShown = current;
+                _lyricRebuilt = false;
                 for (int i = 0; i < _lyricSheet.Items.Count; i++)
                 {
                     if (_lyricSheet.Items[i] is not ListBoxItem item || item.Content is not Grid row)
@@ -1632,10 +1649,7 @@ namespace Hd2Qd.HD2Music
                         blocks[2].FontSize = (active ? 14.0 : 12.5) * _lyricFontScale;
                     }
                 }
-                if (state.LyricIndex >= 0 && state.LyricIndex < state.LyricRows.Count)
-                {
-                    CenterLyric(current);
-                }
+                CenterLyric(current);
             }
         }
 
@@ -1678,12 +1692,19 @@ namespace Hd2Qd.HD2Music
         /// </summary>
         void CenterLyric(int index)
         {
-            if (index < 0 || index >= _lyricSheet.Items.Count)
+            ScrollViewer viewer = FindScrollViewer(_lyricSheet);
+            if (viewer == null)
             {
                 return;
             }
-            ScrollViewer viewer = FindScrollViewer(_lyricSheet);
-            if (viewer == null)
+            // no sung line yet: park the sheet at the top, never inherit the previous
+            // song's scroll offset (which used to leave the first lines below the fold)
+            if (index < 0)
+            {
+                viewer.ScrollToVerticalOffset(0.0);
+                return;
+            }
+            if (index >= _lyricSheet.Items.Count)
             {
                 return;
             }
