@@ -85,6 +85,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckLyricProtocol(asm);
             CheckStreamWatchdog(asm);
             CheckQueueOrder(asm);
+            CheckPaging(asm);
             CheckTab(asm, engineOf(asm));
             BuildWindows(asm);
 
@@ -443,6 +444,31 @@ namespace Hd2Qd.HD2Music.Verify
                 }
             }
             Pass("browse state fields and commands present");
+        }
+
+        /// <summary>The mod pages the radio and episode lists itself; it needs the next offset,
+        /// whether there is one, and a serial that tells a stale page from a fresh one.</summary>
+        static void CheckPaging(Assembly asm)
+        {
+            Type ui = asm.GetType("Hd2Qd.HD2Music.UiState");
+            foreach (string field in new[] { "RadioMore", "RadioOffset", "PodcastMore", "PodcastOffset", "QueueRevision" })
+            {
+                if (ui.GetField(field) == null)
+                {
+                    Fail("UiState." + field + " is missing");
+                    return;
+                }
+            }
+            Type engine = asm.GetType("Hd2Qd.HD2Music.Engine");
+            foreach (string method in new[] { "RadioMore", "PodcastMore", "SearchEnqueue", "QueueEdit" })
+            {
+                if (engine.GetMethod(method, BindingFlags.Instance | BindingFlags.Public) == null)
+                {
+                    Fail("Engine." + method + " is missing");
+                    return;
+                }
+            }
+            Pass("paging fields and commands present");
         }
 
         static void CheckBrowseUi(Assembly asm)

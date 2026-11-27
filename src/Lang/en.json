@@ -354,5 +354,9 @@
   "加入下一首": "Queue behind the current song",
   "EDIT": "EDIT",
   "单击结果开始播放，⇢ 插到当前歌曲之后": "Click a result to play it, ⇢ queues it behind the current song",
-  "上移一位，下移一位，移出队列，或设为下一首": "Move up, move down, remove, or play next"
+  "上移一位，下移一位，移出队列，或设为下一首": "Move up, move down, remove, or play next",
+  "更多频道": "More channels",
+  "更多节目": "More episodes",
+  "重试": "Retry",
+  "正在加载…": "Loading…"
 }

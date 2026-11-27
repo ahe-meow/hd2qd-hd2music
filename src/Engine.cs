@@ -198,7 +198,20 @@ public sealed class Engine : IDisposable
 
 	private string _radioKeyword = "";
 
+	/// <summary>Where the next radio page starts, and whether there is one. A search and the
+	/// directory page differently, so the serial keeps a late answer out of the other's list.</summary>
+	private string _radioMore = "";
+
+	private int _radioOffset;
+
+	private int _radioSerial;
+
 	private string _podcastState = "";
+
+	/// <summary>Same two fields for the episode list of one channel.</summary>
+	private string _podcastMore = "";
+
+	private int _podcastOffset;
 
 	private string _podcastChannel = "";
 
@@ -1336,6 +1349,10 @@ public sealed class Engine : IDisposable
 				AccountLoading = _accountLoading,
 				RadioState = _radioState,
 				PodcastState = _podcastState,
+				RadioMore = _radioMore,
+				PodcastMore = _podcastMore,
+				RadioOffset = _radioOffset,
+				PodcastOffset = _podcastOffset,
 				RecommendState = _recommendState,
 				SmsStage = _smsStage,
 				SmsNotice = _smsNotice,
@@ -1949,10 +1966,15 @@ public sealed class Engine : IDisposable
 			keyword = keyword.Substring(0, 60);
 		}
 		Dictionary<string, string> cookies = Api.Session.Cookies;
+		int serial;
 		lock (_lock)
 		{
+			_radioSerial++;
+			serial = _radioSerial;
 			_radioKeyword = keyword;
 			_radioState = "loading";
+			_radioOffset = 0;
+			_radioMore = "";
 			_radios.Clear();
 		}
 		if (keyword.Length == 0)
@@ -1964,14 +1986,16 @@ public sealed class Engine : IDisposable
 		{
 			try
 			{
-				List<RadioChannel> collection = Api.SearchRadios(keyword, cookies);
+				BrowsePage<RadioChannel> page = Api.SearchRadios(keyword, cookies, 0);
 				lock (_lock)
 				{
-					if (_radioKeyword == keyword)
+					if (_radioSerial == serial && _radioKeyword == keyword)
 					{
 						_radios.Clear();
-						_radios.AddRange(collection);
-						_radioState = collection.Count == 0 ? "empty" : "ready";
+						_radios.AddRange(page.Rows);
+						_radioOffset = page.Offset;
+						_radioMore = page.More ? "ready" : "end";
+						_radioState = page.Rows.Count == 0 ? "empty" : "ready";
 					}
 				}
 			}
@@ -1979,7 +2003,7 @@ public sealed class Engine : IDisposable
 			{
 				lock (_lock)
 				{
-					if (_radioKeyword == keyword)
+					if (_radioSerial == serial && _radioKeyword == keyword)
 					{
 						_radioState = "error";
 					}
@@ -2131,22 +2155,33 @@ public sealed class Engine : IDisposable
 	public void RadioDirectory()
 	{
 		Dictionary<string, string> cookies = Api.Session.Cookies;
+		int serial;
 		lock (_lock)
 		{
+			_radioSerial++;
+			serial = _radioSerial;
 			_radioState = "loading";
 			_radioKeyword = "";
+			_radioOffset = 0;
+			_radioMore = "";
 			_notice = "正在获取电台…";
 		}
 		Post(delegate
 		{
 			try
 			{
-				List<RadioChannel> collection = Api.RadioDirectory(cookies);
+				BrowsePage<RadioChannel> page = Api.RadioDirectory(cookies, 0);
 				lock (_lock)
 				{
+					if (_radioSerial != serial)
+					{
+						return;
+					}
 					_radios.Clear();
-					_radios.AddRange(collection);
-					_radioState = "ready";
+					_radios.AddRange(page.Rows);
+					_radioOffset = page.Offset;
+					_radioMore = page.More ? "ready" : "end";
+					_radioState = page.Rows.Count == 0 ? "empty" : "ready";
 					_notice = "";
 				}
 			}
@@ -2154,8 +2189,66 @@ public sealed class Engine : IDisposable
 			{
 				lock (_lock)
 				{
-					_radioState = "error";
+					if (_radioSerial == serial)
+					{
+						_radioState = "error";
+					}
 					_notice = "电台读取失败：" + ex.Message;
+				}
+			}
+		});
+	}
+
+	/// <summary>Append the next page of radios. An empty offset means "wherever the list is now",
+	/// which is what the panel's own button sends.</summary>
+	public void RadioMore(string offset)
+	{
+		string keyword;
+		int at;
+		int serial;
+		lock (_lock)
+		{
+			if (!string.IsNullOrEmpty(offset) && !string.Equals(offset, _radioOffset.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal))
+			{
+				return;
+			}
+			if (_radioMore != "ready" && _radioMore != "error")
+			{
+				return;
+			}
+			keyword = _radioKeyword;
+			at = _radioOffset;
+			serial = _radioSerial;
+			_radioMore = "loading";
+		}
+		Dictionary<string, string> cookies = Api.Session.Cookies;
+		Post(delegate
+		{
+			try
+			{
+				BrowsePage<RadioChannel> page = string.IsNullOrEmpty(keyword)
+					? Api.RadioDirectory(cookies, at)
+					: Api.SearchRadios(keyword, cookies, at);
+				lock (_lock)
+				{
+					if (_radioSerial != serial || _radioOffset != at)
+					{
+						return;
+					}
+					_radios.AddRange(page.Rows);
+					_radioOffset = page.Offset;
+					_radioMore = page.More && page.Offset > at ? "ready" : "end";
+				}
+			}
+			catch (Exception ex)
+			{
+				lock (_lock)
+				{
+					if (_radioSerial == serial && _radioOffset == at)
+					{
+						_radioMore = "error";
+					}
+					_notice = "加载更多电台失败：" + ex.Message;
 				}
 			}
 		});
@@ -2173,17 +2266,25 @@ public sealed class Engine : IDisposable
 				_podcastFilterSerial++;
 			}
 			_podcastChannel = channelId;
+			_podcastOffset = 0;
+			_podcastMore = "";
 			_podcastTracks.Clear();
 		}
 		Post(delegate
 		{
 			try
 			{
-				List<Track> collection = Api.RadioPrograms(channelId, cookies);
+				BrowsePage<Track> page = Api.RadioPrograms(channelId, cookies, 0);
 				lock (_lock)
 				{
+					if (_podcastChannel != channelId)
+					{
+						return;
+					}
 					_podcastTracks.Clear();
-					_podcastTracks.AddRange(collection);
+					_podcastTracks.AddRange(page.Rows);
+					_podcastOffset = page.Offset;
+					_podcastMore = page.More ? "ready" : "end";
 					_podcastState = "ready";
 				}
 			}
@@ -2191,8 +2292,74 @@ public sealed class Engine : IDisposable
 			{
 				lock (_lock)
 				{
-					_podcastState = "error";
+					if (_podcastChannel == channelId)
+					{
+						_podcastState = "error";
+					}
 					_notice = "播客读取失败：" + ex.Message;
+				}
+			}
+		});
+	}
+
+	/// <summary>Append the next page of episodes. With a filter set the pages are read until one
+	/// holds a matching title, so the game's own filter never lands on an empty screen.</summary>
+	public void PodcastMore(string channel, string offset)
+	{
+		string channelId;
+		string keyword;
+		int at;
+		lock (_lock)
+		{
+			if (!string.IsNullOrEmpty(channel) && !string.Equals(channel, _podcastChannel, StringComparison.Ordinal))
+			{
+				return;
+			}
+			if (!string.IsNullOrEmpty(offset) && !string.Equals(offset, _podcastOffset.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal))
+			{
+				return;
+			}
+			if (_podcastMore != "ready" && _podcastMore != "error")
+			{
+				return;
+			}
+			channelId = _podcastChannel;
+			keyword = _podcastFilter;
+			at = _podcastOffset;
+			_podcastMore = "loading";
+		}
+		if (string.IsNullOrEmpty(channelId))
+		{
+			return;
+		}
+		Dictionary<string, string> cookies = Api.Session.Cookies;
+		Post(delegate
+		{
+			try
+			{
+				BrowsePage<Track> page = string.IsNullOrEmpty(keyword)
+					? Api.RadioPrograms(channelId, cookies, at)
+					: Api.SearchProgramPages(channelId, cookies, at, keyword);
+				lock (_lock)
+				{
+					if (!string.Equals(_podcastChannel, channelId, StringComparison.Ordinal) || _podcastOffset != at)
+					{
+						return;
+					}
+					_podcastTracks.AddRange(page.Rows);
+					_podcastOffset = page.Offset;
+					_podcastMore = page.More && page.Offset > at ? "ready" : "end";
+				}
+			}
+			catch (Exception ex)
+			{
+				lock (_lock)
+				{
+					if (string.Equals(_podcastChannel, channelId, StringComparison.Ordinal) && _podcastOffset == at)
+					{
+						_podcastMore = "error";
+					}
+					_notice = "加载更多节目失败：" + ex.Message;
 				}
 			}
 		});
@@ -2218,7 +2385,7 @@ public sealed class Engine : IDisposable
 		{
 			try
 			{
-				List<Track> list = Api.RadioPrograms(channel.Id, cookies);
+				List<Track> list = Api.RadioPrograms(channel.Id, cookies, 0).Rows;
 				if (list.Count == 0)
 				{
 					lock (_lock)
@@ -3568,7 +3735,12 @@ public sealed class Engine : IDisposable
 		int searchOffset;
 		string radioState;
 		string radioKeyword;
+		string radioMore;
+		int radioOffset;
+		int radioSerial;
 		string podcastState;
+		string podcastMore;
+		int podcastOffset;
 		string recommendState;
 		string podcastChannel;
 		string podcastFilter;
@@ -3614,7 +3786,12 @@ public sealed class Engine : IDisposable
 			searchOffset = _searchOffset;
 			radioState = _radioState;
 			radioKeyword = _radioKeyword;
+			radioMore = _radioMore;
+			radioOffset = _radioOffset;
+			radioSerial = _radioSerial;
 			podcastState = _podcastState;
+			podcastMore = _podcastMore;
+			podcastOffset = _podcastOffset;
 			recommendState = _recommendState;
 			text2 = _coverPreviewKey;
 			text3 = _coverTextureKey;
@@ -3810,6 +3987,9 @@ public sealed class Engine : IDisposable
 		{
 			list8.Add("radio_state=" + radioState);
 			list8.Add("radio_keyword=" + Util.Clean(radioKeyword));
+			list8.Add("radio_more=" + radioMore);
+			list8.Add("radio_offset=" + radioOffset.ToString(CultureInfo.InvariantCulture));
+			list8.Add("radio_serial=" + radioSerial.ToString(CultureInfo.InvariantCulture));
 			foreach (RadioChannel item4 in list5)
 			{
 				list8.Add("radio=" + item4.Id + "\t" + Util.Clean(item4.Name) + "\t" + Util.Clean(item4.Description));
@@ -3818,6 +3998,8 @@ public sealed class Engine : IDisposable
 		if (!string.IsNullOrEmpty(podcastState))
 		{
 			list8.Add("podcast_state=" + podcastState);
+			list8.Add("podcast_more=" + podcastMore);
+			list8.Add("podcast_offset=" + podcastOffset.ToString(CultureInfo.InvariantCulture));
 			foreach (Track item5 in list6)
 			{
 				int num6 = ((item5.Duration > 0.0) ? ((int)item5.Duration) : 0);
@@ -4212,6 +4394,11 @@ public sealed class Engine : IDisposable
 			switch (text2[0])
 			{
 			case 'r':
+				if (text2 == "radio_more")
+				{
+					RadioMore(value.Trim());
+					break;
+				}
 				if (!(text2 == "radio_play"))
 				{
 					break;
@@ -4330,6 +4517,14 @@ public sealed class Engine : IDisposable
 				if (num5 > 0)
 				{
 					PodcastPlay(value.Substring(0, num5), value.Substring(num5 + 1));
+				}
+			}
+			else if (text2 == "podcast_more")
+			{
+				int num5 = value.IndexOf(' ');
+				if (num5 > 0)
+				{
+					PodcastMore(value.Substring(0, num5), value.Substring(num5 + 1).Trim());
 				}
 			}
 			break;

@@ -60,6 +60,14 @@ public sealed class UiState
 
 	public string PodcastState = "";
 
+	public string RadioMore = "";
+
+	public string PodcastMore = "";
+
+	public int RadioOffset;
+
+	public int PodcastOffset;
+
 	public string RecommendState = "";
 
 	public string SmsStage = "";

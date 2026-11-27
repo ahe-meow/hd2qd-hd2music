@@ -108,6 +108,8 @@ namespace Hd2Qd.HD2Music
         TextBlock _channelEmpty;
         TextBlock _episodeEmpty;
         TextBlock _episodeTitle;
+        Button _channelMore;
+        Button _episodeMore;
         string _radioSignature = "";
         string _podcastId = "";
         bool _suppressRadio;
@@ -1273,6 +1275,7 @@ namespace Hd2Qd.HD2Music
             Grid channelsInner = new Grid();
             channelsInner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(32.0) });
             channelsInner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.0, GridUnitType.Star) });
+            channelsInner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(28.0) });
             Border channelsHead = new Border { Padding = new Thickness(14.0, 0.0, 14.0, 0.0), BorderBrush = Theme.Grid, BorderThickness = new Thickness(0.0, 0.0, 0.0, 1.0) };
             channelsHead.Child = new TextBlock
             {
@@ -1334,6 +1337,9 @@ namespace Hd2Qd.HD2Music
             channelsBody.Children.Add(_channelEmpty);
             Grid.SetRow(channelsBody, 1);
             channelsInner.Children.Add(channelsBody);
+            _channelMore = MoreButton("更多频道", delegate { _engine.RadioMore(null); });
+            Grid.SetRow(_channelMore, 2);
+            channelsInner.Children.Add(_channelMore);
             channelsCard.Child = channelsInner;
             body.Children.Add(channelsCard);
 
@@ -1341,6 +1347,7 @@ namespace Hd2Qd.HD2Music
             Grid episodesInner = new Grid();
             episodesInner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(32.0) });
             episodesInner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.0, GridUnitType.Star) });
+            episodesInner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(28.0) });
             Border episodesHead = new Border { Padding = new Thickness(14.0, 0.0, 14.0, 0.0), BorderBrush = Theme.Grid, BorderThickness = new Thickness(0.0, 0.0, 0.0, 1.0) };
             DockPanel episodesBar = new DockPanel { LastChildFill = false };
             episodesBar.Children.Add(new TextBlock
@@ -1385,6 +1392,9 @@ namespace Hd2Qd.HD2Music
             episodesBody.Children.Add(_episodeEmpty);
             Grid.SetRow(episodesBody, 1);
             episodesInner.Children.Add(episodesBody);
+            _episodeMore = MoreButton("更多节目", delegate { _engine.PodcastMore(_podcastId, null); });
+            Grid.SetRow(_episodeMore, 2);
+            episodesInner.Children.Add(_episodeMore);
             episodesCard.Child = episodesInner;
             Grid.SetColumn(episodesCard, 2);
             body.Children.Add(episodesCard);
@@ -2151,6 +2161,10 @@ namespace Hd2Qd.HD2Music
         {
             _channelEmpty.Visibility = state.Radios.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             _episodeEmpty.Visibility = state.PodcastTracks.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            _channelMore.Visibility = state.RadioMore == "ready" || state.RadioMore == "error" ? Visibility.Visible : Visibility.Collapsed;
+            _channelMore.Content = I18n.Text(state.RadioMore == "error" ? "重试" : (state.RadioState == "loading" ? "正在加载…" : "更多频道"));
+            _episodeMore.Visibility = state.PodcastMore == "ready" || state.PodcastMore == "error" ? Visibility.Visible : Visibility.Collapsed;
+            _episodeMore.Content = I18n.Text(state.PodcastMore == "error" ? "重试" : (state.PodcastState == "loading" ? "正在加载…" : "更多节目"));
             string signature = state.Radios.Count + ":" + state.PodcastTracks.Count + ":" + state.PodcastState;
             if (signature == _radioSignature)
             {
@@ -2276,6 +2290,21 @@ namespace Hd2Qd.HD2Music
                 row.MouseLeftButtonUp += delegate { play(); };
             }
             return new ListBoxItem { Tag = index, Content = row };
+        }
+
+        /// <summary>A footer button that only appears when the service says there is another page:
+        /// "更多" over a list that has ended is a promise the list cannot keep.</summary>
+        Button MoreButton(string text, Action action)
+        {
+            Button button = GhostButton(text, action);
+            button.Height = 24.0;
+            button.MinHeight = 24.0;
+            button.FontSize = 10.0;
+            button.Margin = new Thickness(8.0, 2.0, 8.0, 2.0);
+            button.Padding = new Thickness(0.0);
+            button.HorizontalAlignment = HorizontalAlignment.Stretch;
+            button.Visibility = Visibility.Collapsed;
+            return button;
         }
 
         /// <summary>A one-glyph button for the row actions: small enough to sit in a 12 px line,

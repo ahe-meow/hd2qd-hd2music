@@ -493,11 +493,11 @@ public sealed class NeteaseClient
 		return page;
 	}
 
-	public List<RadioChannel> SearchRadios(string keyword, Dictionary<string, string> cookies)
+	public BrowsePage<RadioChannel> SearchRadios(string keyword, Dictionary<string, string> cookies, int offset)
 	{
 		if (string.IsNullOrWhiteSpace(keyword))
 		{
-			return new List<RadioChannel>();
+			return new BrowsePage<RadioChannel> { Offset = offset };
 		}
 		Session session = SideSession("ncm_radio_directory.json");
 		session.Cookies.Clear();
@@ -505,20 +505,34 @@ public sealed class NeteaseClient
 		{
 			session.Cookies[cookie.Key] = cookie.Value;
 		}
-		Dictionary<string, object> dictionary = ApiCallOn(session, "/api/cloudsearch/pc", new Dictionary<string, object>
+		Dictionary<string, object> dictionary = ApiCallOn(session, "/api/search/get/web", new Dictionary<string, object>
 		{
 			{ "s", keyword },
 			{ "type", 1009 },
-			{ "limit", 25 },
-			{ "offset", 0 }
+			{ "limit", 30 },
+			{ "offset", offset },
+			{ "total", true }
 		}, "POST");
 		if ((int)Util.Long(dictionary, "code", 0L) != 200)
 		{
 			throw new ApiException("radio search request failed");
 		}
 		Dictionary<string, object> result = Util.Obj(dictionary.ContainsKey("result") ? dictionary["result"] : null);
+		List<object> raw = Util.List((result != null && result.ContainsKey("djRadios")) ? result["djRadios"] : null).Take(30).ToList();
+		BrowsePage<RadioChannel> page = new BrowsePage<RadioChannel>();
+		page.Rows = RadioRows(raw);
+		page.Offset = offset + raw.Count;
+		long total = Util.Long(result, "djRadiosCount", Util.Long(result, "djRadioCount", 0L));
+		page.More = raw.Count > 0 && (Util.Bool(result, "hasMore", false) || (total > 0 && page.Offset < total) || raw.Count == 30);
+		return page;
+	}
+
+	/// <summary>The rows of a radio listing, dropping anything the game could not open: an id that
+	/// is not a number, or a channel with no name.</summary>
+	private static List<RadioChannel> RadioRows(List<object> raw)
+	{
 		var list = new List<RadioChannel>();
-		foreach (object item in Util.List((result != null && result.ContainsKey("djRadios")) ? result["djRadios"] : null).Take(25))
+		foreach (object item in raw)
 		{
 			Dictionary<string, object> row = Util.Obj(item);
 			if (row == null)
@@ -565,7 +579,7 @@ public sealed class NeteaseClient
 		return TrackRows(rows).Take(25).ToList();
 	}
 
-	public List<RadioChannel> RadioDirectory(Dictionary<string, string> cookies)
+	public BrowsePage<RadioChannel> RadioDirectory(Dictionary<string, string> cookies, int offset)
 	{
 		Session session = SideSession("ncm_radio_directory.json");
 		session.Cookies.Clear();
@@ -576,34 +590,21 @@ public sealed class NeteaseClient
 		Dictionary<string, object> dictionary = ApiCallOn(session, "/api/djradio/hot/v1", new Dictionary<string, object>
 		{
 			{ "limit", 20 },
-			{ "offset", 0 }
+			{ "offset", offset }
 		}, "POST");
 		if ((int)Util.Long(dictionary, "code", 0L) != 200)
 		{
 			throw new ApiException("radio directory request failed");
 		}
-		List<RadioChannel> list = new List<RadioChannel>();
-		foreach (object item in Util.List(dictionary.ContainsKey("djRadios") ? dictionary["djRadios"] : null).Take(20))
-		{
-			Dictionary<string, object> dictionary2 = Util.Obj(item);
-			if (dictionary2 != null && dictionary2.TryGetValue("id", out var value) && value != null)
-			{
-				string text = Util.Clean(Util.Str(dictionary2, "name"));
-				if (!string.IsNullOrEmpty(text))
-				{
-					list.Add(new RadioChannel
-					{
-						Id = Util.IdOf(value),
-						Name = text,
-						Description = Util.Clean(Util.Str(dictionary2, "desc") ?? Util.Str(dictionary2, "category"))
-					});
-				}
-			}
-		}
-		return list;
+		List<object> raw = Util.List(dictionary.ContainsKey("djRadios") ? dictionary["djRadios"] : null).Take(20).ToList();
+		BrowsePage<RadioChannel> page = new BrowsePage<RadioChannel>();
+		page.Rows = RadioRows(raw);
+		page.Offset = offset + raw.Count;
+		page.More = raw.Count > 0 && Util.Bool(dictionary, "more", raw.Count == 20);
+		return page;
 	}
 
-	public List<Track> RadioPrograms(string identifier, Dictionary<string, string> cookies)
+	public BrowsePage<Track> RadioPrograms(string identifier, Dictionary<string, string> cookies, int offset)
 	{
 		Session session = SideSession("ncm_radio_programs.json");
 		session.Cookies.Clear();
@@ -614,16 +615,17 @@ public sealed class NeteaseClient
 		Dictionary<string, object> dictionary = ApiCallOn(session, "/api/dj/program/byradio", new Dictionary<string, object>
 		{
 			{ "radioId", identifier },
-			{ "limit", 50 },
-			{ "offset", 0 },
+			{ "limit", 20 },
+			{ "offset", offset },
 			{ "asc", false }
 		}, "POST");
 		if ((int)Util.Long(dictionary, "code", 0L) != 200)
 		{
 			throw new ApiException("radio programs request failed");
 		}
-		List<Track> list = new List<Track>();
-		foreach (object item in Util.List(dictionary.ContainsKey("programs") ? dictionary["programs"] : null))
+		List<object> raw = Util.List(dictionary.ContainsKey("programs") ? dictionary["programs"] : null).Take(20).ToList();
+		BrowsePage<Track> page = new BrowsePage<Track>();
+		foreach (object item in raw)
 		{
 			Dictionary<string, object> dictionary2 = Util.Obj(item);
 			if (dictionary2 == null)
@@ -650,10 +652,36 @@ public sealed class NeteaseClient
 				{
 					track.Duration = num;
 				}
-				list.Add(track);
+				page.Rows.Add(track);
 			}
 		}
-		return list;
+		page.Offset = offset + raw.Count;
+		page.More = raw.Count > 0 && Util.Bool(dictionary, "more", raw.Count == 20);
+		return page;
+	}
+
+	/// <summary>Pages until the filtered title shows up: the game filters only what it was handed,
+	/// so a keyword that matches nothing on the first page would otherwise look like an empty show.
+	/// Three pages is the ceiling — past that the listener is better served by a narrower word.</summary>
+	public BrowsePage<Track> SearchProgramPages(string identifier, Dictionary<string, string> cookies, int offset, string keyword)
+	{
+		string terms = (keyword ?? "").Trim().ToLowerInvariant();
+		BrowsePage<Track> page = new BrowsePage<Track> { Offset = offset };
+		for (int attempt = 0; attempt < 3; attempt++)
+		{
+			int before = page.Offset;
+			BrowsePage<Track> chunk = RadioPrograms(identifier, cookies, before);
+			page.Rows.AddRange(chunk.Rows);
+			page.Offset = chunk.Offset;
+			bool hit = terms.Length == 0 || chunk.Rows.Any(t => (t.Title ?? "").ToLowerInvariant().Contains(terms));
+			if (!chunk.More || chunk.Offset <= before || hit)
+			{
+				page.More = chunk.More && chunk.Offset > before;
+				return page;
+			}
+		}
+		page.More = false;
+		return page;
 	}
 
 	public string Stream(string song, string level = "standard", Session session = null)
