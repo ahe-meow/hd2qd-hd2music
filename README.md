@@ -186,7 +186,7 @@ the fallback window and the login window off-screen. It needs no game, network o
 Current output:
 
 ```
-  ok   assembly name HD2QD.HD2Music, version 1.8.4
+  ok   assembly name HD2QD.HD2Music, version 1.8.5
   ok   target framework .NETFramework,Version=v4.8
   ok   Api = 2 (a const the manager reads before running any code)
   ok   Kind = window

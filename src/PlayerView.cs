@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -52,6 +53,8 @@ namespace Hd2Qd.HD2Music
         int _lyricShown = -1;
         // blank rows above and below so the sung line can sit at the vertical centre
         const int LyricPad = 12;
+
+        double _lyricFontScale = LoadLyricFontScale();
         SpectrumBars _spectrum;
         ListBox _peek;
         TextBlock _peekCount;
@@ -470,7 +473,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.8.4 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.8.5 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -815,19 +818,22 @@ namespace Hd2Qd.HD2Music
                 ItemContainerStyle = Theme.S("Row"),
                 Margin = new Thickness(2.0, 4.0, 2.0, 4.0)
             };
+            ScrollViewer.SetVerticalScrollBarVisibility(_peek, ScrollBarVisibility.Auto);
+            ScrollViewer.SetHorizontalScrollBarVisibility(_peek, ScrollBarVisibility.Disabled);
             Grid.SetRow(_peek, 1);
             inner.Children.Add(_peek);
 
-            Border footer = new Border { Padding = new Thickness(8.0), BorderBrush = Theme.Grid, BorderThickness = new Thickness(0.0, 1.0, 0.0, 0.0) };
+            Border footer = new Border { Padding = new Thickness(8.0, 0.0, 8.0, 0.0), BorderBrush = Theme.Grid, BorderThickness = new Thickness(0.0, 1.0, 0.0, 0.0) };
             Button all = new Button
             {
                 Content = "打开播放队列 →",
                 Style = Theme.S("Ghost"),
                 BorderThickness = new Thickness(0.0),
-                Height = 30.0,
-                MinHeight = 30.0,
+                Height = 28.0,
+                MinHeight = 28.0,
                 FontSize = 11.0,
-                HorizontalAlignment = HorizontalAlignment.Stretch
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Center
             };
             all.Click += delegate { ShowPage("queue"); };
             footer.Child = all;
@@ -1398,6 +1404,38 @@ namespace Hd2Qd.HD2Music
             _auditionButton.Margin = new Thickness(0.0);
             DockPanel.SetDock(_auditionButton, Dock.Right);
             head.Children.Add(_auditionButton);
+
+            Button bigger = new Button
+            {
+                Content = "+",
+                Style = Theme.S("Ghost"),
+                Width = 22.0,
+                Height = 20.0,
+                MinHeight = 20.0,
+                Padding = new Thickness(0.0),
+                FontSize = 12.0,
+                Margin = new Thickness(0.0, 0.0, 6.0, 0.0),
+                ToolTip = "放大歌词"
+            };
+            bigger.Click += delegate { ChangeLyricFont(0.15); };
+            DockPanel.SetDock(bigger, Dock.Right);
+            head.Children.Add(bigger);
+
+            Button smaller = new Button
+            {
+                Content = "−",
+                Style = Theme.S("Ghost"),
+                Width = 22.0,
+                Height = 20.0,
+                MinHeight = 20.0,
+                Padding = new Thickness(0.0),
+                FontSize = 12.0,
+                Margin = new Thickness(0.0, 0.0, 4.0, 0.0),
+                ToolTip = "缩小歌词"
+            };
+            smaller.Click += delegate { ChangeLyricFont(-0.15); };
+            DockPanel.SetDock(smaller, Dock.Right);
+            head.Children.Add(smaller);
             inner.Children.Add(head);
 
             _lyricSheet = new ListBox
@@ -1468,19 +1506,23 @@ namespace Hd2Qd.HD2Music
                     TextBlock text = new TextBlock
                     {
                         Text = line.Text,
-                        FontSize = 15.0,
+                        FontSize = 15.0 * _lyricFontScale,
                         Foreground = Theme.Muted,
                         TextWrapping = TextWrapping.Wrap,
+                        TextAlignment = TextAlignment.Center,
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
                         Margin = new Thickness(0.0, 2.0, 0.0, 0.0)
                     };
                     words.Children.Add(text);
                     TextBlock translation = new TextBlock
                     {
                         Text = line.Translation ?? "",
-                        FontSize = 12.5,
+                        FontSize = 12.5 * _lyricFontScale,
                         Foreground = Theme.Muted,
                         Opacity = 0.78,
                         TextWrapping = TextWrapping.Wrap,
+                        TextAlignment = TextAlignment.Center,
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
                         Visibility = string.IsNullOrEmpty(line.Translation) ? Visibility.Collapsed : Visibility.Visible,
                         Margin = new Thickness(0.0, 4.0, 0.0, 2.0)
                     };
@@ -1520,9 +1562,9 @@ namespace Hd2Qd.HD2Music
                         blocks[0].FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
                         blocks[1].Foreground = active ? Theme.Yellow : Theme.Muted;
                         blocks[1].FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
-                        blocks[1].FontSize = active ? 20.0 : 15.0;
+                        blocks[1].FontSize = (active ? 20.0 : 15.0) * _lyricFontScale;
                         blocks[2].Foreground = active ? Theme.Yellow : Theme.Muted;
-                        blocks[2].FontSize = active ? 14.0 : 12.5;
+                        blocks[2].FontSize = (active ? 14.0 : 12.5) * _lyricFontScale;
                     }
                 }
                 if (state.LyricIndex >= 0 && state.LyricIndex < state.LyricRows.Count)
@@ -1530,6 +1572,25 @@ namespace Hd2Qd.HD2Music
                     CenterLyric(current);
                 }
             }
+        }
+
+        static readonly string LyricFontFile = Path.Combine(Util.Root, "ncm_lyric_fontsize.txt");
+
+        static double LoadLyricFontScale()
+        {
+            double value;
+            string text = Util.ReadText(LyricFontFile);
+            return (text != null && double.TryParse(text.Trim(), NumberStyles.Float,
+                CultureInfo.InvariantCulture, out value) && value >= 0.7 && value <= 2.0) ? value : 1.0;
+        }
+
+        void ChangeLyricFont(double delta)
+        {
+            _lyricFontScale = Math.Max(0.7, Math.Min(2.0, Math.Round(_lyricFontScale + delta, 2)));
+            Util.AtomicWrite(LyricFontFile, _lyricFontScale.ToString("0.00", CultureInfo.InvariantCulture));
+            // force a rebuild so every row picks up the new size immediately
+            _lyricSheetSignature = "";
+            _lyricShown = -1;
         }
 
         static ListBoxItem BlankLyricRow()
@@ -2044,23 +2105,17 @@ namespace Hd2Qd.HD2Music
             string reason = state.Notice;
             if (string.IsNullOrWhiteSpace(reason))
             {
-                reason = !state.GameRunning ? "未启动游戏 · 启动游戏后即可播放"
-                    : state.State == "loading" ? "正在读取…"
+                reason = state.State == "loading" ? "正在读取…"
                     : state.State == "buffering" ? "缓冲中…"
                     : state.State == "playing" ? "播放中"
                     : state.State == "paused" ? "已暂停"
                     : state.State == "finished" ? "播放结束"
                     : "空闲";
             }
-            else if (!state.GameRunning && !reason.Contains("游戏") && !NoticeTakesPrecedence(reason))
-            {
-                // "已读取歌单，选择歌曲播放" alone hid the real reason a click does nothing
-                reason = "未启动游戏 · " + reason;
-            }
             _statusNotice.Text = I18n.Text("STATUS ") + I18n.Text(reason);
             bool busy = state.State == "loading" || state.State == "buffering" || reason.Contains("正在");
             bool blocked = NoticeTakesPrecedence(reason);
-            _statusNotice.Foreground = (busy || blocked || !state.GameRunning || reason.Contains("游戏")) ? Theme.Yellow : Theme.Muted;
+            _statusNotice.Foreground = (busy || blocked) ? Theme.Yellow : Theme.Muted;
             _statusQueue.Text = I18n.Text("QUEUE ") + state.Count;
             _statusQuality.Text = I18n.Text("QUALITY ") + I18n.Text(state.Quality.ToUpperInvariant());
             bool ffmpegReady = File.Exists(_engine.FfmpegPath);
@@ -2073,7 +2128,9 @@ namespace Hd2Qd.HD2Music
             _peekCount.Text = state.Count.ToString();
             int start = state.Index >= 0 ? state.Index + 1 : 0;
             List<int> indices = new List<int>();
-            for (int i = start; i < state.Queue.Count && indices.Count < 5; i++)
+            // the card is a scrollable viewport now, so list every upcoming track rather
+            // than the old five-row teaser that had nothing to scroll
+            for (int i = start; i < state.Queue.Count; i++)
             {
                 indices.Add(i);
             }
