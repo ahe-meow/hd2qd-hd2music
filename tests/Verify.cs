@@ -81,6 +81,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckVerificationUi(asm);
             CheckI18n(asm);
             CheckQueuePersistence(asm);
+            CheckUnplayableSkip(asm);
             CheckTab(asm, engineOf(asm));
             BuildWindows(asm);
 
@@ -513,6 +514,57 @@ namespace Hd2Qd.HD2Music.Verify
                 }
             }
             Pass("playlist persists across launches, cleared on account change or invalid login");
+        }
+
+        /// <summary>A track the service will not serve (copyright, no licence, VIP only) must say
+        /// so on the game's lyric line and give way to the next one instead of stalling on it.</summary>
+        static void CheckUnplayableSkip(Assembly asm)
+        {
+            Type engine = asm.GetType("Hd2Qd.HD2Music.Engine");
+            Type track = asm.GetType("Hd2Qd.HD2Music.Track");
+            MethodInfo say = engine?.GetMethod("UnplayableText", BindingFlags.NonPublic | BindingFlags.Static);
+            MethodInfo retries = engine?.GetMethod("RetriesBeforeGivingUp", BindingFlags.NonPublic | BindingFlags.Static);
+            if (say == null || retries == null || track == null)
+            {
+                Fail("Engine.UnplayableText or Engine.RetriesBeforeGivingUp is missing");
+                return;
+            }
+            object song = Activator.CreateInstance(track);
+            track.GetField("Artist").SetValue(song, "周杰伦");
+            track.GetField("Title").SetValue(song, "晴天");
+            string line = (string)say.Invoke(null, new object[] { song, "zh-CN" });
+            if (line != "歌曲「周杰伦 - 晴天」无法播放")
+            {
+                Fail("the unplayable line is " + line);
+                return;
+            }
+            string english = (string)say.Invoke(null, new object[] { song, "en" });
+            if (english != "Cannot play \"周杰伦 - 晴天\"")
+            {
+                Fail("the unplayable line in English is " + english);
+                return;
+            }
+            object bare = Activator.CreateInstance(track);
+            track.GetField("Artist").SetValue(bare, "");
+            track.GetField("Title").SetValue(bare, "晴天");
+            string shortLine = (string)say.Invoke(null, new object[] { bare, "zh-CN" });
+            if (shortLine != "歌曲「晴天」无法播放")
+            {
+                Fail("the unplayable line for a track with no artist is " + shortLine);
+                return;
+            }
+            if ((int)retries.Invoke(null, new object[] { true }) != 2 || (int)retries.Invoke(null, new object[] { false }) != 1)
+            {
+                Fail("a dead source must be retried once, a dropped connection twice");
+                return;
+            }
+            if (engine.GetMethod("AnnounceUnplayable", BindingFlags.Instance | BindingFlags.NonPublic) == null
+                || engine.GetField("_blocked", BindingFlags.Instance | BindingFlags.NonPublic) == null)
+            {
+                Fail("Engine does not carry the announcement into the state file");
+                return;
+            }
+            Pass("an unplayable track announces itself in the lyric line, then skips");
         }
 
         static void CheckFfmpeg(Assembly asm)

@@ -142,6 +142,17 @@ public sealed class Engine : IDisposable
 
 	private double _resumeAt;
 
+	/// <summary>The line that stands in for a lyric while a track the service will not serve is
+	/// being announced, and the moment it has been on screen long enough to read.</summary>
+	private string _blocked;
+
+	private DateTime _blockedUntil;
+
+	/// <summary>Unplayable tracks in a row: a queue where nothing plays must stop, not cycle.</summary>
+	private int _blockedCount;
+
+	private const int AnnounceMs = 2200;
+
 	private readonly List<Playlist> _lists = new List<Playlist>();
 
 	private readonly List<Playlist> _recommended = new List<Playlist>();
@@ -992,6 +1003,7 @@ public sealed class Engine : IDisposable
 		MixTick();
 		PollLogin();
 		CheckGame(prompt: false);
+		AdvanceBlocked();
 		if (Player != null)
 		{
 			int? num = Player.Result();
@@ -1325,6 +1337,12 @@ public sealed class Engine : IDisposable
 	{
 		previous = (current = (next = (prefix = (translation = ""))));
 		index = -1;
+		if (!string.IsNullOrEmpty(_blocked))
+		{
+			// the panel shows what the game shows: the reason, not the song before it
+			current = _blocked;
+			return;
+		}
 		if (!_lyricsEnabled || (_state != "playing" && _state != "paused" && _state != "buffering") || _lyricsRows.Count == 0)
 		{
 			return;
@@ -2531,6 +2549,7 @@ public sealed class Engine : IDisposable
 			_index = index;
 			_state = "loading";
 			_notice = "正在加载音源…";
+			_blocked = null;
 			_lyricsRows.Clear();
 			_lyricsSong = "";
 			_seeking = false;
@@ -2565,12 +2584,10 @@ public sealed class Engine : IDisposable
 		}
 		if (string.IsNullOrEmpty(text))
 		{
-			lock (_lock)
-			{
-				_state = "idle";
-				_notice = "当前歌曲没有可用音源（可能需要会员或版权限制）";
-				return;
-			}
+			// the service has no stream for this track at any quality: copyright, no licence,
+			// VIP only. Nothing to retry, so say why and move on.
+			AnnounceUnplayable(index);
+			return;
 		}
 		if (!Player.Start(text, token, position, paused: false, track.Duration))
 		{
@@ -2586,8 +2603,85 @@ public sealed class Engine : IDisposable
 			_state = "playing";
 			_notice = "";
 			_seeking = false;
+			_blockedCount = 0;
 		}
 		LoadLyrics(track.Id);
+	}
+
+	/// <summary>How many times a broken stream is retried before its track is given up on: one for
+	/// a source that never made a sound (a dead URL, not a dropped one), two for a connection that
+	/// broke mid-song, where losing the position would cost the listener real listening.</summary>
+	private static int RetriesBeforeGivingUp(bool heard)
+	{
+		return heard ? 2 : 1;
+	}
+
+	private static string UnplayablePattern(Track track)
+	{
+		return string.IsNullOrEmpty(track.Artist) ? "歌曲「{0}」无法播放" : "歌曲「{0} - {1}」无法播放";
+	}
+
+	private static object[] UnplayableArgs(Track track)
+	{
+		string title = string.IsNullOrEmpty(track.Title) ? "未知歌曲" : track.Title;
+		return string.IsNullOrEmpty(track.Artist) ? new object[] { title } : new object[] { track.Artist, title };
+	}
+
+	/// <summary>The sentence shown in place of a lyric, in the language the plugin is set to.
+	/// Song and artist are never translated, only the sentence around them.</summary>
+	private static string UnplayableText(Track track, string lang)
+	{
+		return Words.F(lang, UnplayablePattern(track), UnplayableArgs(track));
+	}
+
+	/// <summary>Say on the lyric line why a track cannot be played, then move on. The line is held
+	/// for a moment because the game polls ncm_state.txt: a single 200 ms write would be missed.</summary>
+	private void AnnounceUnplayable(int index)
+	{
+		lock (_lock)
+		{
+			if (index < 0 || index >= _queueTracks.Count)
+			{
+				return;
+			}
+			Track track = _queueTracks[index];
+			_blockedCount++;
+			if (_blockedCount > _queueTracks.Count)
+			{
+				// not one track of the queue plays: stop here rather than cycle for ever
+				_blocked = null;
+				_blockedCount = 0;
+				_state = "finished";
+				_notice = "歌单中没有可播放的歌曲";
+				return;
+			}
+			string line = UnplayableText(track, I18n.CurrentLang);
+			_blocked = line;
+			_blockedUntil = DateTime.UtcNow.AddMilliseconds(AnnounceMs);
+			_state = "buffering";
+			// the lyric panel carries the sentence; the notice only explains the move
+			_notice = I18n.Text("正在切到下一首…");
+		}
+	}
+
+	/// <summary>Move on once the announcement has had its time on screen, unless something else
+	/// (a stop, a click on another track, the game closing) already took the player away.</summary>
+	private void AdvanceBlocked()
+	{
+		string state;
+		lock (_lock)
+		{
+			if (_blocked == null || DateTime.UtcNow < _blockedUntil)
+			{
+				return;
+			}
+			state = _state;
+			_blocked = null;
+		}
+		if (state == "buffering")
+		{
+			Next();
+		}
 	}
 
 	private void LoadLyrics(string song)
@@ -2933,26 +3027,41 @@ public sealed class Engine : IDisposable
 		int index;
 		double endedPosition;
 		int resumeAttempts;
+		bool heard;
+		bool giveUp;
 		lock (_lock)
 		{
 			index = _index;
 			endedPosition = Player.EndedPosition;
 			resumeAttempts = _resumeAttempts;
+			heard = endedPosition - Player.Offset > 0.5;
 			if (index < 0 || index >= _queueTracks.Count)
 			{
 				_state = "idle";
 				_notice = "";
 				return;
 			}
-			if (resumeAttempts >= 2)
+			giveUp = resumeAttempts >= RetriesBeforeGivingUp(heard);
+			if (giveUp)
 			{
 				_state = "idle";
-				_notice = "音源连接中断，可以重试当前歌曲或手动切歌";
-				return;
+				_notice = heard ? "音源连接中断，可以重试当前歌曲或手动切歌" : "";
 			}
-			_resumeAttempts = resumeAttempts + 1;
-			_state = "buffering";
-			_notice = "音源连接中断，正在续播当前歌曲…";
+			else
+			{
+				_resumeAttempts = resumeAttempts + 1;
+				_state = "buffering";
+				_notice = "音源连接中断，正在续播当前歌曲…";
+			}
+		}
+		if (giveUp)
+		{
+			if (!heard)
+			{
+				// a socket that never delivered a note is a dead source, not a dropped one
+				AnnounceUnplayable(index);
+			}
+			return;
 		}
 		double duration = TrackDuration();
 		double ended = endedPosition;
@@ -3172,6 +3281,7 @@ public sealed class Engine : IDisposable
 		int podcastFilterSerial;
 		string recommendMore;
 		bool accountLoading;
+		string blocked;
 		Dictionary<string, string> dictionary;
 		Dictionary<string, string> dictionary2;
 		Dictionary<string, string> dictionary3;
@@ -3218,6 +3328,7 @@ public sealed class Engine : IDisposable
 			podcastFilterSerial = _podcastFilterSerial;
 			recommendMore = _recommendMore;
 			accountLoading = _accountLoading;
+			blocked = _blocked;
 			dictionary = new Dictionary<string, string>(_recommendTiles, StringComparer.Ordinal);
 			dictionary2 = new Dictionary<string, string>(_recommendKeys, StringComparer.Ordinal);
 			dictionary3 = new Dictionary<string, string>(_listTiles, StringComparer.Ordinal);
@@ -3280,6 +3391,17 @@ public sealed class Engine : IDisposable
 				}
 			}
 		}
+		if (!string.IsNullOrEmpty(blocked))
+		{
+			// the announcement takes the whole lyric block: the timed lines still in memory
+			// describe the track that could not be played
+			value3 = blocked;
+			value4 = "";
+			value5 = "";
+			value6 = "";
+			text = "";
+			index = -1;
+		}
 		List<string> list8 = new List<string>
 		{
 			"time=" + Epoch().ToString(CultureInfo.InvariantCulture),
@@ -3315,7 +3437,7 @@ public sealed class Engine : IDisposable
 			"cover_texture_key=" + text3,
 			"mini_texture_key=" + text4
 		};
-		if (lyricsEnabled)
+		if (lyricsEnabled && string.IsNullOrEmpty(blocked))
 		{
 			switch (state)
 			{
