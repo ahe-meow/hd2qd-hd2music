@@ -203,6 +203,10 @@ public sealed class Engine : IDisposable
 
 	private readonly List<Track> _queueTracks = new List<Track>();
 
+	// personal FM is a station, not a fixed playlist: /api/v1/radio/get returns one track at a
+	// time and the queue has to be refilled as it runs out. This guards against double fetches.
+	private volatile bool _fmRefilling;
+
 	private readonly List<Track> _searchResults = new List<Track>();
 
 	private readonly List<Track> _podcastTracks = new List<Track>();
@@ -2924,6 +2928,63 @@ public sealed class Engine : IDisposable
 		StartPlayAt(index, 0.0);
 	}
 
+	/// <summary>
+	/// The official helper treats private FM as a station: radio/get hands back one track,
+	/// and when the queue runs out it keeps the last twenty and appends the next one. Copy
+	/// that here instead of replacing the queue with a single song and stopping.
+	/// </summary>
+	void RefillFm(bool keepResumeAttempts)
+	{
+		_fmRefilling = true;
+		lock (_lock)
+		{
+			_state = "loading";
+			_notice = "正在获取私人 FM…";
+		}
+		List<Track> fresh = null;
+		try
+		{
+			fresh = Api.PersonalizedTracks("fm", Api.Session.Cookies);
+		}
+		catch (Exception ex)
+		{
+			lock (_lock)
+			{
+				_notice = "获取失败：" + ex.Message;
+			}
+		}
+		int first = -1;
+		lock (_lock)
+		{
+			if (fresh != null && fresh.Count > 0)
+			{
+				int keep = Math.Min(20, Math.Max(0, _queueTracks.Count - 1));
+				List<Track> tail = _queueTracks.GetRange(_queueTracks.Count - keep, keep);
+				first = tail.Count;
+				_queueTracks.Clear();
+				_queueTracks.AddRange(tail);
+				_queueTracks.AddRange(fresh);
+				_queueRevision++;
+				_currentListId = "fm";
+				_currentList = "私人 FM";
+				_trackFirst = 1;
+				_priorityNext = null;
+				_shuffleNext = null;
+			}
+			_fmRefilling = false;
+		}
+		if (first < 0)
+		{
+			lock (_lock)
+			{
+				_state = "finished";
+				_notice = "暂时无法获取歌曲，请稍后重试";
+			}
+			return;
+		}
+		StartPlayAt(first, 0.0, keepResumeAttempts);
+	}
+
 	private void StartPlayAt(int index, double position, bool keepResumeAttempts = false)
 	{
 		if (_lockedOut)
@@ -2937,6 +2998,11 @@ public sealed class Engine : IDisposable
 		{
 			if (index < 0 || index >= _queueTracks.Count)
 			{
+				if (_currentListId == "fm" && !_fmRefilling)
+				{
+					RefillFm(keepResumeAttempts);
+					return;
+				}
 				_state = "finished";
 				_notice = "歌单已播完或没有更多可播歌曲";
 				return;
@@ -3339,6 +3405,11 @@ public sealed class Engine : IDisposable
 			{
 				// a row the listener moved up to play next wins over the order, even shuffle
 				return _priorityNext.Value;
+			}
+			// FM is a stream: always walk forward to the end so RefillFm can fetch the next
+			if (!manual && _currentListId == "fm")
+			{
+				return _index + 1;
 			}
 			if (_order == "repeat" && !manual && _index >= 0)
 			{

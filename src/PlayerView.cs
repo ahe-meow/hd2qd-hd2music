@@ -88,6 +88,8 @@ namespace Hd2Qd.HD2Music
 
         Button _fmButton;
 
+        Button _myPlaylistsButton;
+
         Button _stopButton;
 
         TextBox _radioSearch;
@@ -473,7 +475,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.8.5 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.8.6 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -542,9 +544,21 @@ namespace Hd2Qd.HD2Music
             page.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
             page.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16.0) });
             page.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(344.0) });
+            page.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            page.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.0, GridUnitType.Star) });
+
+            // stations live where playback does, not in the library
+            StackPanel stations = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0.0, 0.0, 0.0, 10.0) };
+            _dailyButton = GhostButton("每日推荐", delegate { _engine.Daily(); });
+            stations.Children.Add(_dailyButton);
+            _fmButton = GhostButton("私人 FM", delegate { _engine.Fm(); });
+            _fmButton.Margin = new Thickness(10.0, 0.0, 0.0, 0.0);
+            stations.Children.Add(_fmButton);
+            page.Children.Add(stations);
 
             Border heroCard = Card(BuildHero());
             heroCard.Padding = new Thickness(18.0);
+            Grid.SetRow(heroCard, 1);
             page.Children.Add(heroCard);
 
             Grid rail = new Grid();
@@ -556,6 +570,7 @@ namespace Hd2Qd.HD2Music
             Grid.SetRow(system, 2);
             rail.Children.Add(system);
             Grid.SetColumn(rail, 2);
+            Grid.SetRow(rail, 1);
             page.Children.Add(rail);
             return page;
         }
@@ -946,21 +961,11 @@ namespace Hd2Qd.HD2Music
             header.Children.Add(title);
 
             StackPanel actions = new StackPanel { Orientation = Orientation.Horizontal };
-            _recommendedButton = GhostButton("推荐歌单", delegate
-            {
-                _showRecommended = !_showRecommended;
-                _librarySignature = "";
-                if (_showRecommended)
-                {
-                    _engine.LoadRecommendations();
-                }
-                Refresh();
-            });
+            // a two-state switch, not a button that shows the *other* state as its label
+            _recommendedButton = GhostButton("推荐歌单", delegate { SelectPlaylists(true); });
             actions.Children.Add(_recommendedButton);
-            _dailyButton = GhostButton("每日推荐", delegate { _engine.Daily(); });
-            actions.Children.Add(_dailyButton);
-            _fmButton = GhostButton("私人 FM", delegate { _engine.Fm(); });
-            actions.Children.Add(_fmButton);
+            _myPlaylistsButton = GhostButton("我的歌单", delegate { SelectPlaylists(false); });
+            actions.Children.Add(_myPlaylistsButton);
             actions.Children.Add(GhostButton("刷新", delegate
             {
                 _engine.RefreshAccount();
@@ -2191,11 +2196,27 @@ namespace Hd2Qd.HD2Music
             }
         }
 
+        void SelectPlaylists(bool recommended)
+        {
+            if (_showRecommended == recommended)
+            {
+                return;
+            }
+            _showRecommended = recommended;
+            _librarySignature = "";
+            if (recommended)
+            {
+                _engine.LoadRecommendations();
+            }
+            Refresh();
+        }
+
         void RefreshLibrary(UiState state)
         {
             List<Playlist> source = _showRecommended ? state.Recommended : state.Lists;
             _libraryCount.Text = source.Count.ToString();
-            _recommendedButton.Content = _showRecommended ? "我的歌单" : "推荐歌单";
+            _recommendedButton.Style = Theme.S(_showRecommended ? "Primary" : "Ghost");
+            _myPlaylistsButton.Style = Theme.S(_showRecommended ? "Ghost" : "Primary");
             string signature = (_showRecommended ? "r:" : "p:") + string.Join("|", source.Select(p => p.Id + p.Name));
             if (signature == _librarySignature)
             {
@@ -2305,13 +2326,6 @@ namespace Hd2Qd.HD2Music
         void PlayQueueAt(int index)
         {
             UiState state = _engine.Snapshot();
-            if (!state.GameRunning)
-            {
-                // let the engine write its "start the game first" notice even when the
-                // clicked row is the stale current one
-                _engine.Play(index);
-                return;
-            }
             if (state.Index == index && (state.State == "playing" || state.State == "paused" || state.State == "loading"))
             {
                 return;

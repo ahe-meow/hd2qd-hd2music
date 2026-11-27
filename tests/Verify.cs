@@ -75,6 +75,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckText(asm, plugin);
             CheckQr(asm);
             CheckPlaybackWithoutGame(asm);
+            CheckFmStation(asm);
             CheckDataHub(asm);
             CheckFfmpeg(asm);
             CheckBrowseApi(asm);
@@ -326,6 +327,22 @@ namespace Hd2Qd.HD2Music.Verify
                 return;
             }
             Pass("playback token survives a stopped heartbeat: music works outside the game");
+        }
+
+        /// <summary>
+        /// radio/get hands back one track per call. Without a refill path private FM is a
+        /// one-song playlist and stops; the official helper keeps appending as it runs out.
+        /// </summary>
+        static void CheckFmStation(Assembly asm)
+        {
+            Type engine = asm.GetType("Hd2Qd.HD2Music.Engine", true);
+            if (engine.GetMethod("RefillFm", BindingFlags.Instance | BindingFlags.NonPublic) == null
+                || engine.GetField("_fmRefilling", BindingFlags.Instance | BindingFlags.NonPublic) == null)
+            {
+                Fail("private FM has no refill path");
+                return;
+            }
+            Pass("private FM refills its queue instead of stopping after one track");
         }
 
         static void CheckDataHub(Assembly asm)
