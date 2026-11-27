@@ -1,0 +1,106 @@
+# Data Hub 握手：`_hd2runtime.pyd` 逆向结论
+
+对象：`网易云在线助手/runtime/_hd2runtime.cp314-win_amd64.pyd`（430 592 B，PE32+ x86-64，
+SHA-256 `25dc01fe118e37d19b3402f2e0cab70bf7859c3461726828ac2702ced8613847`），
+Nuitka 以 module 模式编译的 CPython 3.14 扩展（`__code__.co_varnames` 保留，`co_consts` 是占位符）。
+
+## 一、结论
+
+**模组主体不需要解密、不需要重新编码，也不需要联网。** 它是模组包里一个 166 097 字节的
+`.stream` 文件，逐字节复制成 `hd2_music_data.dat` 即可。pyd 在这条链上只做三件事：
+定位游戏进程、校验包没被篡改、把字节搬运到数据目录。
+
+因此「把 pyd 内嵌进插件」在技术上成立（430 KB + 23.7 MB 运行时），但**没有必要**：
+插件用几十行 C# 就能完成同样的交付，零额外体积、零原生依赖。
+
+## 二、握手协议（三个文件，全在 `%LOCALAPPDATA%\HD2Phone\`）
+
+| 文件 | 方向 | 内容 |
+| --- | --- | --- |
+| `hd2_music_start.dat` | 模组 → 外部 | `<session>:<epoch>:<lua 表地址>`，单行 |
+| `hd2_music_ready.dat` | 外部 → 模组 | `start.dat` 的**原样回显**（含结尾换行） |
+| `hd2_music_data.dat` | 外部 → 模组 | 4 字节 magic `d5d713be 8f498220` 开头的密文载荷 |
+
+`GameWatch` 的实例字段直接印证这四个路径都从心跳文件同目录派生：
+
+```
+heartbeat  ...\HD2Phone\ncm_game_alive.txt
+request    ...\HD2Phone\hd2_music_start.dat
+response   ...\HD2Phone\hd2_music_ready.dat
+payload    ...\HD2Phone\hd2_music_data.dat
+```
+
+## 三、实测证据
+
+在隔离的 `LOCALAPPDATA` 下用随包 CPython 3.14.9 直接驱动 `GameWatch`：
+
+1. **载荷来源**
+   - `SIGNED_PAYLOAD.stream_size = 166097`，等于 `HD2 Music - Arsenal.zip` 内
+     `data/9ba626afa44a3aa3.patch_0.stream` 的字节数。
+   - `sha256(该 .stream) = 8592e8c576df733aca98146f25c17f75fe85b4725058d1d9fd2fe144ffa0b134`，
+     与 `SIGNED_PAYLOAD.stream_digest` **完全一致**——这份流是被签名覆盖的。
+   - `font_files` 三条（962 448 / 240 997 376 / 0）与字库 `09caa46bc556e38f` 的三个文件一一对应。
+
+2. **`reply()` 的输出就是原样拷贝**
+   把 `self.media` 设为上述 166 097 字节、`self.session` 设为任意值后调用 `reply()`：
+
+   ```
+   hd2_music_data.dat   166097 bytes  delta=+0  same=True  differing bytes: 0
+   hd2_music_ready.dat       47 bytes  = "ffffffffffffffffffffffff:1795799176:table: 0x1\n"
+   ```
+
+   换成另一个全 `f` 的 session，`data.dat` 仍然逐字节相同（`same=True`）。
+   **session 不参与 `data.dat` 的编码**，只出现在 `ready.dat` 的回显里。
+
+3. **签名是真实有效的**
+   `verify_signature(base64 文本, SIGNATURE) = False`，
+   `verify_signature(base64 解码后的 856 字节 JSON, SIGNATURE) = True`。
+   RSA-2048（modulus 512 hex / exponent `010001` / signature 512 hex），签名覆盖 payload 明文。
+
+4. **不联网**
+   导入表共 239 个函数：`python314.dll`（CPython API）、`KERNEL32.dll`、`VCRUNTIME140`、
+   CRT。**没有** `WS2_32` / `WINHTTP` / `WININET` / `URLMON` / `ADVAPI32` / `bcrypt`。
+   二进制里也没有任何 URL 或域名，只有三个 `.dat` 文件名、`LOCALAPPDATA`、`HD2Phone`。
+
+5. **游戏进程定位**
+   `game_pid()` 按进程名找 `helldivers2`（把 `python.exe` 改名成 `helldivers2.exe` 能被认出，
+   返回其 pid）。`game_data(pid)` 还要求父进程/路径符合，因此伪造进程拿不到数据——
+   真实的游戏进程天然满足，对插件无影响。
+
+## 四、插件要做的（替代 pyd，无原生依赖）
+
+```
+1. 轮询 %LOCALAPPDATA%\HD2Phone\hd2_music_start.dat
+2. 有内容 → 记录文本（这就是要回显的全部）
+3. 找  <mods>\HD2 Music - Arsenal*\data\9ba626afa44a3aa3.patch_0.stream
+   校验 sha256 == 8592e8c576df733aca98146f25c17f75fe85b4725058d1d9fd2fe144ffa0b134
+4. 原子写 hd2_music_data.dat（先 .tmp 再 rename，166 097 B）
+5. 原子写 hd2_music_ready.dat（step 2 的原文，一字不改）
+6. 删 start.dat，等下一轮
+```
+
+要点：
+
+- **必须原子写**。pyd 的 `reply(self)` 里就有一个 `temporary` 局部变量，说明它也是
+  「写临时文件再 rename」。模组侧读文件时不会重试。
+- **`ready.dat` 一字不改**，连结尾换行都要保留。实测输出 47 字节，等于
+  `"<24 字符 session>:<10 位 epoch>:table: 0x1\n"`。
+- **校验 digest 再交付**。这是 pyd 里 `SIGNATURE`/`verify_signature` 存在的唯一理由：
+  防止有人往库里塞一个被改过的 `.stream`。插件只搬运作者签名保护的字节，不伪造任何东西。
+- **`patch_0.stream` 的读取位置**：Arsenal 部署到游戏目录时会把同名 `.stream` 写成 **0 字节**
+  （实测 `9ba626afa44a3aa3.patch_90.stream` = 0 B），所以**不能**读游戏目录，
+  要读 Arsenal 库目录里的原始包（`<mods>\HD2 Music - Arsenal_*\data\...`）。
+
+## 五、未验证
+
+- 没有在运行中的游戏里跑完整握手，所以「模组收到这份 166 KB 后能正常加载」是推论，
+  不是观测。要坐实需要一次游戏内实测（启动游戏 → 启用模组 → 放行插件交付 → 按 F7）。
+- 模组侧对 `.stream` 的解密算法在 1.2.7 的壳里（`_72b()`），本次没有逆它——
+  插件只搬运、不需要知道密钥。
+
+## 六、为什么上一轮的结论是错的
+
+上一轮据 `docs/mod-reverse-1.2.4.md` 第三节推断「主体由助手在握手后交付并校验，
+属于密码学边界」。方向没错（确实是外部交付），但把「交付」误当成「解密生成」。
+这次的 `reply()` 实测把中间那一步消掉了：**交付就是复制**。
+签名保护的是「别被换掉」，不是「解不开」。
