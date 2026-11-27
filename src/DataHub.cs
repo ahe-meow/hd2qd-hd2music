@@ -128,6 +128,13 @@ sealed class DataHub
 			{
 				return null;
 			}
+			// a mod that is still waiting rewrites this file every second; an untouched one is
+			// a leftover from an earlier session (an older mod, or a payload already delivered)
+			// and answering it would claim a handshake nobody is waiting for
+			if ((DateTime.UtcNow - info.LastWriteTimeUtc).TotalSeconds > 120.0)
+			{
+				return null;
+			}
 			string text = File.ReadAllText(RequestPath, Encoding.ASCII);
 			// the mod's own reader demands "session:epoch:..." and a trailing newline
 			if (!text.EndsWith("\n", StringComparison.Ordinal))
