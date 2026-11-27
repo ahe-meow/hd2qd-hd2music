@@ -153,6 +153,12 @@ public sealed class Engine : IDisposable
 
 	private const int AnnounceMs = 2200;
 
+	/// <summary>Lyric calibration in milliseconds, read from the file the game's own settings
+	/// write; positive shows each line earlier.</summary>
+	private double _lyricOffset;
+
+	private DateTime _lyricOffsetAt;
+
 	private readonly List<Playlist> _lists = new List<Playlist>();
 
 	private readonly List<Playlist> _recommended = new List<Playlist>();
@@ -1318,7 +1324,7 @@ public sealed class Engine : IDisposable
 				Radios = new List<RadioChannel>(_radios),
 				PodcastTracks = new List<Track>(_podcastTracks)
 			};
-			LyricLines(num, out var previous, out var current, out var next, out var prefix, out var index, out var translation);
+			LyricLines(num + _lyricOffset / 1000.0, out var previous, out var current, out var next, out var prefix, out var index, out var translation);
 			obj.PreviousLyric = previous;
 			obj.Lyric = current;
 			obj.NextLyric = next;
@@ -2616,6 +2622,46 @@ public sealed class Engine : IDisposable
 		return heard ? 2 : 1;
 	}
 
+	/// <summary>The shared calibration file holds one offset per player. Only the netease line is
+	/// ours; a value outside the game's ±3 s range is clamped rather than trusted.</summary>
+	private static int LyricOffsetMs(string text)
+	{
+		if (string.IsNullOrEmpty(text))
+		{
+			return 0;
+		}
+		Match match = Regex.Match(text, "netease=(-?[0-9]{1,4})");
+		if (!match.Success || !int.TryParse(match.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int ms))
+		{
+			return 0;
+		}
+		return Math.Max(-3000, Math.Min(3000, ms));
+	}
+
+	/// <summary>Re-read the calibration at most once a second: the game writes it from its own
+	/// settings page, and a refresh every 200 ms would be a file read per frame of lyric.</summary>
+	private void RefreshLyricOffset()
+	{
+		DateTime now = DateTime.UtcNow;
+		if ((now - _lyricOffsetAt).TotalMilliseconds < 900.0)
+		{
+			return;
+		}
+		_lyricOffsetAt = now;
+		double offset = 0.0;
+		try
+		{
+			offset = LyricOffsetMs(Util.ReadText(Path.Combine(Root, "ncm_lyric_offsets.txt")));
+		}
+		catch
+		{
+		}
+		lock (_lock)
+		{
+			_lyricOffset = offset;
+		}
+	}
+
 	private static string UnplayablePattern(Track track)
 	{
 		return string.IsNullOrEmpty(track.Artist) ? "歌曲「{0}」无法播放" : "歌曲「{0} - {1}」无法播放";
@@ -3232,6 +3278,7 @@ public sealed class Engine : IDisposable
 		{
 			return;
 		}
+		RefreshLyricOffset();
 		UpdateCovers();
 		string value = "";
 		string value2 = "";
@@ -3282,6 +3329,7 @@ public sealed class Engine : IDisposable
 		string recommendMore;
 		bool accountLoading;
 		string blocked;
+		double offset;
 		Dictionary<string, string> dictionary;
 		Dictionary<string, string> dictionary2;
 		Dictionary<string, string> dictionary3;
@@ -3329,6 +3377,7 @@ public sealed class Engine : IDisposable
 			recommendMore = _recommendMore;
 			accountLoading = _accountLoading;
 			blocked = _blocked;
+			offset = _lyricOffset;
 			dictionary = new Dictionary<string, string>(_recommendTiles, StringComparer.Ordinal);
 			dictionary2 = new Dictionary<string, string>(_recommendKeys, StringComparer.Ordinal);
 			dictionary3 = new Dictionary<string, string>(_listTiles, StringComparer.Ordinal);
@@ -3362,7 +3411,7 @@ public sealed class Engine : IDisposable
 				case "paused":
 				case "buffering":
 				{
-					double num4 = num;
+					double num4 = num + offset / 1000.0;
 					int num5 = -1;
 					for (int i = 0; i < list7.Count && list7[i].At <= num4; i++)
 					{
@@ -3419,6 +3468,8 @@ public sealed class Engine : IDisposable
 			"duration=" + Number(num2),
 			"volume=" + num3,
 			"lyric=" + Util.Clean(value3),
+			"lyric_pos=" + Number(num + offset / 1000.0),
+			"lyric_offset=" + offset.ToString("0", CultureInfo.InvariantCulture),
 			"seek_ready=" + (flag ? 1 : 0),
 			"seek_serial=" + _seekSerial,
 			"lyrics_on=" + (lyricsEnabled ? 1 : 0),
@@ -3428,15 +3479,32 @@ public sealed class Engine : IDisposable
 			"next_lyric=" + Util.Clean(value5),
 			"previous_lyric=" + Util.Clean(value4),
 			"lyric_index=" + index,
-			"lyric_prefix=" + Util.Clean(Prefix(list7, index, num)),
+			"lyric_prefix=" + Util.Clean(Prefix(list7, index, num + offset / 1000.0)),
 			"lyric_marks=" + text,
 			"list_id=" + Util.Clean(currentListId),
 			"track_first=" + trackFirst,
 			"lyric_translation=" + Util.Clean(value6),
+			"lyric_at=" + ((index >= 0 && index < list7.Count) ? list7[index].At.ToString("0.000", CultureInfo.InvariantCulture) : ""),
+			"lyric_total=" + list7.Count.ToString(CultureInfo.InvariantCulture),
 			"cover_key=" + text2,
 			"cover_texture_key=" + text3,
 			"mini_texture_key=" + text4
 		};
+		if (string.IsNullOrEmpty(blocked) && lyricsEnabled && index >= 0)
+		{
+			// the panel shows two lines before and three after the current one: the new mod
+			// draws its lyric column from these rows, not from previous/next alone
+			for (int offset2 = -2; offset2 <= 3; offset2++)
+			{
+				int row = index + offset2;
+				if (offset2 == 0 || row < 0 || row >= list7.Count || string.IsNullOrEmpty(list7[row].Text))
+				{
+					continue;
+				}
+				list8.Add("lyric_context=" + offset2 + "\t" + Util.Clean(list7[row].Text) + "\t" + Util.Clean(list7[row].Translation));
+				list8.Add("lyric_context_at=" + offset2 + "\t" + list7[row].At.ToString("0.000", CultureInfo.InvariantCulture));
+			}
+		}
 		if (lyricsEnabled && string.IsNullOrEmpty(blocked))
 		{
 			switch (state)
@@ -3445,7 +3513,7 @@ public sealed class Engine : IDisposable
 			case "paused":
 			case "buffering":
 				list8.Add("world_timing=1");
-				AppendWorldRows(list8, list7, index, num);
+				AppendWorldRows(list8, list7, index, num + offset / 1000.0);
 				break;
 			}
 		}

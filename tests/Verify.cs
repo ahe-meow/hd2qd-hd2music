@@ -82,6 +82,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckI18n(asm);
             CheckQueuePersistence(asm);
             CheckUnplayableSkip(asm);
+            CheckLyricProtocol(asm);
             CheckTab(asm, engineOf(asm));
             BuildWindows(asm);
 
@@ -567,8 +568,41 @@ namespace Hd2Qd.HD2Music.Verify
             Pass("an unplayable track announces itself in the lyric line, then skips");
         }
 
-        static void CheckFfmpeg(Assembly asm)
+        /// <summary>The game's settings write a lyric calibration both players read; the plugin
+        /// has to honour it and report the fields the new mod's lyric panel asks for.</summary>
+        static void CheckLyricProtocol(Assembly asm)
         {
+            Type engine = asm.GetType("Hd2Qd.HD2Music.Engine");
+            MethodInfo parse = engine?.GetMethod("LyricOffsetMs", BindingFlags.NonPublic | BindingFlags.Static);
+            if (parse == null)
+            {
+                Fail("Engine.LyricOffsetMs is missing");
+                return;
+            }
+            if ((int)parse.Invoke(null, new object[] { "netease=350\nsmtc=-100\n" }) != 350)
+            {
+                Fail("the netease offset is not read from ncm_lyric_offsets.txt");
+                return;
+            }
+            if ((int)parse.Invoke(null, new object[] { "netease=-1400\r\nsmtc=0\r\n" }) != -1400)
+            {
+                Fail("a negative offset with CRLF is not read");
+                return;
+            }
+            if ((int)parse.Invoke(null, new object[] { "netease=9999\n" }) != 3000)
+            {
+                Fail("the offset is not clamped to the game's 3 s range");
+                return;
+            }
+            if ((int)parse.Invoke(null, new object[] { "" }) != 0 || (int)parse.Invoke(null, new object[] { "smtc=25\n" }) != 0)
+            {
+                Fail("a missing or smtc-only offset must read as zero");
+                return;
+            }
+            Pass("lyric calibration is read from the game's own settings file");
+        }
+
+        static void CheckFfmpeg(Assembly asm)        {
             if (!asm.GetManifestResourceNames().Contains("ffmpeg.exe.gz"))
             {
                 Pass("lite build: no embedded ffmpeg to extract");
