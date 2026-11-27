@@ -41,8 +41,8 @@ payload    ...\HD2Phone\hd2_music_data.dat
      与 `SIGNED_PAYLOAD.stream_digest` **完全一致**——这份流是被签名覆盖的。
    - `font_files` 三条（962 448 / 240 997 376 / 0）与字库 `09caa46bc556e38f` 的三个文件一一对应。
 
-2. **`reply()` 的输出就是原样拷贝**
-   把 `self.media` 设为上述 166 097 字节、`self.session` 设为任意值后调用 `reply()`：
+2. **`reply()` 原样拷贝 `self.media`——但 `self.media` 不是原始 `.stream`**（2026-11-28 更正）
+   当时把 `self.media` **手动赋值**为上述 166 097 字节再调 `reply()`，得到：
 
    ```
    hd2_music_data.dat   166097 bytes  delta=+0  same=True  differing bytes: 0
@@ -50,7 +50,9 @@ payload    ...\HD2Phone\hd2_music_data.dat
    ```
 
    换成另一个全 `f` 的 session，`data.dat` 仍然逐字节相同（`same=True`）。
-   **session 不参与 `data.dat` 的编码**，只出现在 `ready.dat` 的回显里。
+   **这只证明了 `reply()` 是拷贝函数，没有证明助手交给它的字节是原始 stream。**
+   实际上 `authorize()` 返回的 `media` 是**改写过 32 字节头部**的载荷：
+   `8592e8c5…` → `4d975b05…`。详见第十三节——这就是 1.2.7 主体加载失败的真正根因。
 
 3. **签名是真实有效的**
    `verify_signature(base64 文本, SIGNATURE) = False`，
@@ -149,8 +151,10 @@ tag        = hmac.digest(mac_key, '/'.join(LAYOUT).encode() + cipher, 'sha256')
 
 上一轮据 `docs/mod-reverse-1.2.4.md` 第三节推断「主体由助手在握手后交付并校验，
 属于密码学边界」。方向没错（确实是外部交付），但把「交付」误当成「解密生成」。
-这次的 `reply()` 实测把中间那一步消掉了：**交付就是复制**。
-签名保护的是「别被换掉」，不是「解不开」。
+`reply()` 实测确实只是拷贝——**但拷贝的是 `authorize()` 改写过的 `media`**。
+当时手工给 `self.media` 赋值才得出「交付就是复制、与 `.stream` 逐字节相同」的结论，
+这个推理链是断的；正确的结论在第十三节。
+签名保护的是「别被换掉」，解锁头保护的是「能不能解开」。
 
 ## 九、握手成了活锁（2026-11-28 实测故障，1.7.2 修）
 
@@ -264,3 +268,37 @@ locked_out=yes
 修：`Tick()` 里把请求的 session 与 `_mediaSession` 比对，不一致就丢弃缓存重新解析。`dbcheck` 增一步 `build swap : reused=False`（切到 1.2.6 的 session 后，目录里没有 154 907 的字节，必须什么都不交付；旧代码会把 166 097 交出去）。
 
 这条也解释了为什么换版本测试必须重启管理器——1.7.5 之前缓存只在进程启动时清空。
+
+## 十三、真正的根因：data.dat 的 32 字节解锁头（2026-11-28，1.8.0 修）
+
+官方助手能让 1.2.7 正常工作，插件交付「逐字节相同的 `.stream`」却不能——这个对照把前面所有推断推翻了。用助手自带的 Python 跑 `authorize()`，把返回的 `media` 与包内 `.stream` 逐字节比：
+
+```
+raw        166097  sha256 8592e8c576df733a…
+authorised 166097  sha256 4d975b059f02fd20…
+differing bytes: 31      range 8 .. 39
+raw   [8:40] = 461433360eb3027dd4713c430317631ecd764c6ba488a6da15c3c623849504a3
+unlock[8:40] = a65cc602ea1313601e04d9bb4d4ad2ee5a895c6bc10df769a26ee5eaf15dc05f
+BUNDLED_UNLOCK == unlock[8:40]        True
+```
+
+**助手不是把 `.stream` 原样交出去，而是用内嵌的 32 字节 `BUNDLED_UNLOCK` 覆盖第 8–39 字节**（该值由 `release_unlock(session, unlock_digest)` 从签名清单的 `unlock_digest` 派生；清单同时钉住 `stream_digest` 和 `stream_size`）。
+
+壳的 `_72b()` 把 `data.dat` 的第 9–40 字节（即 `[8:40]`）记进 `_43a[1]`，握手后把它作为 `_d67(0, _43a[1], …)` 的密钥材料。所以：
+
+- 插件交原始 stream → 密钥错误 → `_cd1`/`_65e` 解出垃圾 → `_6b4`/`_b15` 失败 → `_1d7` 静默退出；
+- 助手交改写后的 stream → 密钥正确 → 主体加载；
+- 1.2.6 的壳不取这段做密钥，所以原始 stream 也能跑——这解释了「1.2.6 通、1.2.7 不通」的全部现象，也解释了为什么 `beat=yes/no` 与交付是否成功无关。
+
+**修复**（1.8.0，`src/DataHub.cs`）：`Known` 表为 1.2.7 增加 `Unlock`（32 字节）与 `UnlockedDigest`（`4d975b05…`）。`FindMedia()` 先校验原始 `.stream` 的摘要，再克隆字节、把解锁头写到偏移 8，最后要求改写后的 sha256 命中 `UnlockedDigest` 才缓存交付。1.2.6 没有 `Unlock`，行为不变。
+
+**反馈回路**（diagnosing-bugs 要求）：
+
+- 红：`.analysis/dbcheck/bin/Debug/net48/dbcheck.exe .analysis/_hubtest release/HD2QD.HD2Music.dll 4d975b05…`
+  → `FAIL digest mismatch, expected 4d975b05…`
+- 绿：同一条命令修复后 → `data.dat : 166097 bytes sha256 4d975b05…` / `PASS`
+- 逐字节复核：插件交付的 `hd2_music_data.dat` 与助手 `authorize()` 导出的 `unlocked_127.bin` **0 处差异**。
+
+`Verify.cs` 的 `CheckDataHub` 现在要求至少一条载荷钉住 32 字节解锁头和改写后的摘要，`build.bat` 每次都会跑。
+
+**纠错记录**：第三节「交付就是复制」和第八节「中间那一步消掉了」都基于把 `gw.media` 手工赋成原始 stream 的探针——那只能证明 `reply()` 是拷贝函数，不能证明 `authorize()` 给出的输入是原始字节。这两处已在原文标注更正。

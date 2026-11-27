@@ -325,6 +325,7 @@ namespace Hd2Qd.HD2Music.Verify
                 return;
             }
             string sizes = "";
+            bool unlocked = false;
             foreach (object row in rows)
             {
                 Type payload = row.GetType();
@@ -337,7 +338,25 @@ namespace Hd2Qd.HD2Music.Verify
                     Fail("DataHub payload row is malformed: " + session + " / " + size);
                     return;
                 }
+                // 1.2.7's shell reads bytes 8..39 of data.dat as key material; the helper
+                // replaces them before replying, so the bare .stream never decrypts
+                byte[] key = payload.GetField("Unlock")?.GetValue(row) as byte[];
+                if (key != null)
+                {
+                    string after = (string)payload.GetField("UnlockedDigest").GetValue(row);
+                    if (key.Length != 32 || !Regex.IsMatch(after ?? "", "^[0-9a-f]{64}$"))
+                    {
+                        Fail("DataHub unlock header is malformed: " + session);
+                        return;
+                    }
+                    unlocked = true;
+                }
                 sizes += (sizes.Length == 0 ? "" : " + ") + size;
+            }
+            if (!unlocked)
+            {
+                Fail("no payload pins the unlock header the helper writes into data.dat");
+                return;
             }
             // 1.2.6 moved the body behind the handshake, so the heartbeat cannot precede it:
             // if these two ever stop being wired the plugin deadlocks against a live game
@@ -348,7 +367,7 @@ namespace Hd2Qd.HD2Music.Verify
                 Fail("a delivered handshake must count as liveness (DataHub.Handshaked -> GameWatch.Modern)");
                 return;
             }
-            Pass("Data Hub handshake wired: " + sizes + " byte payloads pinned by session, delivered only when the helper is absent, and counted as liveness until the mod beats back");
+            Pass("Data Hub handshake wired: " + sizes + " byte payloads pinned by session, 1.2.7's unlock header installed, delivered only when the helper is absent, and counted as liveness until the mod beats back");
         }
 
         static object engineOf(Assembly asm)

@@ -26,6 +26,12 @@ sealed class DataHub
 		public long Size;
 
 		public string Digest;
+
+		// 1.2.7's shell takes bytes 8..39 of data.dat as key material. The helper overwrites
+		// that header with a bundled unlock before replying; the raw .stream cannot work.
+		public byte[] Unlock;
+
+		public string UnlockedDigest;
 	}
 
 	// stream_size and stream_digest, read out of each version's signed manifest
@@ -41,7 +47,14 @@ sealed class DataHub
 		{
 			Session = "b47b8bca95c7b43374b34f41",
 			Size = 166097L,
-			Digest = "8592e8c576df733aca98146f25c17f75fe85b4725058d1d9fd2fe144ffa0b134"
+			Digest = "8592e8c576df733aca98146f25c17f75fe85b4725058d1d9fd2fe144ffa0b134",
+			Unlock = new byte[]
+			{
+				0xa6, 0x5c, 0xc6, 0x02, 0xea, 0x13, 0x13, 0x60, 0x1e, 0x04, 0xd9, 0xbb,
+				0x4d, 0x4a, 0xd2, 0xee, 0x5a, 0x89, 0x5c, 0x6b, 0xc1, 0x0d, 0xf7, 0x69,
+				0xa2, 0x6e, 0xe5, 0xea, 0xf1, 0x5d, 0xc0, 0x5f
+			},
+			UnlockedDigest = "4d975b059f02fd20de33d1de6de335e73bbf82a529c210742ca7fa6fb93fe9d9"
 		}
 	};
 
@@ -211,6 +224,23 @@ sealed class DataHub
 				if (!Trusted(Hash(data)))
 				{
 					continue;
+				}
+				// the helper does not reply with the bare stream: it swaps the 32-byte header
+				// for the unlocked key before writing data.dat. 1.2.7's decoder reads that
+				// header as key material, so a raw stream decrypts to garbage and the body
+				// gives up silently. Refuse anything that does not hash to the pinned result.
+				if (known != null && known.Unlock != null)
+				{
+					if (data.Length < 8 + known.Unlock.Length)
+					{
+						continue;
+					}
+					data = (byte[])data.Clone();
+					Buffer.BlockCopy(known.Unlock, 0, data, 8, known.Unlock.Length);
+					if (!string.Equals(Hash(data), known.UnlockedDigest, StringComparison.OrdinalIgnoreCase))
+					{
+						continue;
+					}
 				}
 				_media = data;
 				_mediaSession = session;
