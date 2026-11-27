@@ -2,7 +2,7 @@
 
 日期：2026-11-27
 上游位置：`C:\Users\madma\Desktop\游戏\HD2 TOOLS\HD2 Music\`
-本地插件：`hd2qd-hd2music`（1.5.4）
+本地插件：`hd2qd-hd2music`（1.6.0）
 基线：`HD2 Music/网易云在线助手`（上游 11-25 版）与 `HD2 Music/HD2 Music - Arsenal.zip`（mod 1.2.3）
 
 ## 一、结论

@@ -17,8 +17,15 @@ spectrum keep working, because the plugin writes the same state files the mod's 
   directory and its episodes, recommended playlists, search by song or artist, queue.
 - **Playback**: play/pause, previous/next, seek, volume, five quality levels (standard, higher,
   exhigh, lossless, Hi-Res), repeat/shuffle/order, gapless next-track preparation.
+- **Queue editing**: every row has up, down, remove and play-next; a search hit can be queued
+  behind the current song without interrupting it. The playing row is refused — the decoder is
+  reading from it — and each edit bumps `queue_revision` so the game knows its rows moved.
 - **Lyrics**: line-synced, word-synced where NetEase provides it, translations; the current,
-  previous and next line are published to the mod for its 2D and 3D lyrics.
+  previous and next line are published to the mod for its 2D and 3D lyrics. The panel lists the
+  whole sheet beside the current line: click a row to seek there, and **试听本句** repeats the
+  line being sung (the mod gets the same two tools as `lyric_window` and `audition`).
+- **Paging**: the radio directory and a show's episodes load twenty at a time, and **更多** asks
+  for the next page; a filtered episode list reads up to three pages looking for a match.
 - **State for the mod**: now playing, progress, queue, cover (texture, preview and mini), the
   16-band spectrum and the timed world-lyric cues — all in `ncm_state.txt`,
   `ncm_spectrum.txt` and the `.dat` cover files the mod already reads.
@@ -32,14 +39,17 @@ spectrum keep working, because the plugin writes the same state files the mod's 
 
 One command bar, five views, no sidebar and no separate player strip:
 
-- **CONSOLE** — the cover, the current line and its translation with the next line under it, the
+- **CONSOLE** — the cover, the current line and its translation with the next line under it,
+  the whole lyric sheet beside it (click a row to seek, **试听本句** to loop the line), the
   16-band spectrum the mod also draws in game, the transport and the volume; on the right, the
   next five tracks and a SYSTEM panel: state, **quality and order as segmented switches**,
-  lyrics, queue, playlist, position, ffmpeg and the helper lock.
+  lyrics, queue, playlist, position, ffmpeg, the helper lock and **导出诊断**.
 - **LIBRARY** — playlist cards as numbered tiles; a click reads the playlist into **QUEUE** so a
   song can be chosen, and **播放全部** starts it from the top. **QUEUE** and **SEARCH** — two-line
-  track tables (title over artist), one click plays, the current row is yellow; **RADIO** —
-  channels on the left, episodes on the right, one click plays an episode.
+  track tables (title over artist), one click plays, the current row is yellow; queue rows carry
+  the four edit buttons and search rows a **⇢** that queues the hit next. **RADIO** —
+  channels on the left, episodes on the right, one click plays an episode, **更多** pages either
+  list.
 - The gear opens a settings sheet over the same window (lyrics, decoder, account, about);
   quality and order live in the console's SYSTEM panel, where they are one click away. Esc
   closes the sheet. The status strip carries the current reason (reading a playlist, buffering,
@@ -99,6 +109,7 @@ Under `%LOCALAPPDATA%\HD2Phone`:
 | `ncm_pending_login.json` | The QR login session while a QR is on screen. |
 | `ncm_lyrics_enabled.txt`, `ncm_quality.txt`, `ncm_order.txt`, `ncm_automix.txt`, `ncm_ffmpeg.txt` | The plugin's own settings, the same names the helper uses. |
 | `ffmpeg.exe` | Written next to the plugin (or in this folder) from the packed copy when none exists; the decoder the player spawns. |
+| `ncm_diagnostics.txt` | Written only when you press **导出诊断**: build, decoder, state, track, paging states and the state file's own timestamp, for a bug report. The account name is masked. |
 | `ncm_helper.lock` | The single-instance lock shared with the helper. |
 | `ncm_game_alive.txt` | **Read** only: the mod's heartbeat. Playback is refused without it. |
 
@@ -115,13 +126,20 @@ Elsewhere:
 
 ## Compatibility
 
-The state writer is checked field by field against `ncm_online_helper.py` 1.2.3's `publish()`:
+The state writer is checked field by field against `ncm_online_helper.py` 1.2.7's `publish()`:
 current song, progress, lyrics (line, word marks, translation, timed world cues), queue, cover
 keys, playlist/recommend/radio/podcast/search lists, spectrum, and the paging/filter rows
-`search_more`, `search_offset`, `radio_keyword`, `podcast_filter`, `podcast_filter_serial`,
-`recommend_more` and `account_loading` are all written. The game-side "load more" affordances
-therefore work. The interface is bilingual. Settings → 语言 offers 跟随 HD2QD / 强制中文 / 强制 English;
-"follow" tracks the manager's language, and the choice is stored in `ncm_language.txt`.
+`search_more`, `search_offset`, `radio_keyword`, `radio_more`, `radio_offset`, `radio_serial`,
+`podcast_filter`, `podcast_filter_serial`, `podcast_more`, `podcast_offset`, `recommend_more`,
+`queue_revision`, `audition` and `account_loading` are all written, as are the lyric rows
+`lyric_pos`, `lyric_offset`, `lyric_at`, `lyric_total`, `lyric_context`, `lyric_window_center`
+and `lyric_window_row`. The game-side paging, queue editing, lyric window and audition
+affordances therefore work; the commands `radio_more`, `podcast_more`, `queue_edit`,
+`search_enqueue`, `lyric_window`, `lyric_window_close`, `audition` and `audition_stop` are read
+from `ncm_cmd_*.txt`, and `deployment` is the one field deliberately not written (the plugin
+has no deployment story to report). The interface is bilingual. Settings → 语言 offers
+跟随 HD2QD / 强制中文 / 强制 English; "follow" tracks the manager's language, and the choice is
+stored in `ncm_language.txt`.
 The tab also exposes 每日推荐, 私人 FM, STOP, radio search and podcast filter,
 plus a verification-state website link and a karaoke prefix preview in the lyric panel.
 
@@ -159,7 +177,7 @@ the fallback window and the login window off-screen. It needs no game, network o
 Current output:
 
 ```
-  ok   assembly name HD2QD.HD2Music, version 1.5.3
+  ok   assembly name HD2QD.HD2Music, version 1.6.0
   ok   target framework .NETFramework,Version=v4.8
   ok   Api = 2 (a const the manager reads before running any code)
   ok   Kind = window
@@ -224,7 +242,11 @@ MIT — see [LICENSE](LICENSE).
 - 插件与 Python 助手共用 `ncm_helper.lock`，同一时间只有一个解码。助手已在运行（F7 播放）时，
   插件会把点击的播放/切歌/音量/音质等命令写进 `ncm_cmd_*.txt` 转交助手执行；状态栏显示
   “在线助手已接管播放”，标题、进度、歌词从助手状态同步。插件占锁时不写状态与频谱。
-- 状态字段与助手 1.2.3 的 `publish()` 逐项对照，含游戏内分页/筛选字段：`search_more`、`search_offset`、`radio_keyword`、`podcast_filter`、`podcast_filter_serial`、`recommend_more`、`account_loading`；“加载更多/筛选”可用。
+- 状态字段与助手 1.2.7 的 `publish()` 逐项对照，含游戏内分页/筛选/队列/歌词窗口字段：`search_more`、`search_offset`、`radio_keyword`、`radio_more`、`radio_offset`、`radio_serial`、`podcast_filter`、`podcast_filter_serial`、`podcast_more`、`podcast_offset`、`recommend_more`、`queue_revision`、`audition`、`account_loading`，以及 `lyric_pos`、`lyric_offset`、`lyric_at`、`lyric_total`、`lyric_context`、`lyric_window_center`、`lyric_window_row`；“加载更多/筛选/队列编辑/歌词窗口/试听”可用。唯一故意不写的是 `deployment`（插件没有可汇报的部署状态）。
+- 队列每行带上移、下移、移出、设为下一首；搜索结果可用 ⇢ 插到当前歌曲之后。正在播放的那一行不可编辑——解码器正从它读取。
+- 播放页当前歌词右侧列出整张歌词：点击某行跳转，**试听本句**循环当前这一句（最长 90 秒，或直到按下别的操作）。
+- 电台频道与播客节目每次加载 20 条，底部“更多”翻页；带筛选词时最多连读三页找匹配标题。
+- SYSTEM 面板的**导出诊断**把版本、解码器、状态、曲目与状态文件时间写进 `ncm_diagnostics.txt`，账号名已打码。
 - 界面中英双语；设置页“语言”可选“跟随 HD2QD / 强制中文 / 强制 English”，选择保存在 `ncm_language.txt`；默认跟随管理器语言。
 - 插件页新增每日推荐、私人 FM、STOP、电台搜索、播客筛选；扫码需要安全验证时显示“打开官网”；歌词面板显示逐字高亮预览。
 
