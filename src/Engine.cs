@@ -96,6 +96,9 @@ public sealed class Engine : IDisposable
 
 	private FileStream _lockFile;
 
+	// answers the mod's Data Hub handshake; idle on 1.2.5 and older, whose body ships inline
+	private DataHub _dataHub;
+
 	private bool _lockedOut;
 
 	private static int _commandSerial;
@@ -631,6 +634,10 @@ public sealed class Engine : IDisposable
 		Api = new NeteaseClient(new Session(Path.Combine(Root, "ncm_session.json")));
 		Player = new StreamPlayer(FfmpegPath, Path.Combine(Root, "ncm_game_alive.txt"));
 		Player.GameWatch.Start();
+		_dataHub = new DataHub(Root, delegate
+		{
+			return Player.GameWatch.Pid;
+		});
 		LoadSettings();
 		RestoreQueue();
 		_worker = new Thread(WorkerRun)
@@ -1017,6 +1024,18 @@ public sealed class Engine : IDisposable
 			try
 			{
 				Publish();
+			}
+			catch
+			{
+			}
+			try
+			{
+				// while the helper holds the lock it owns the handshake; we only take over
+				// when it is absent, which is the whole point of shipping this here
+				if (_dataHub != null && !IsLockedOut)
+				{
+					_dataHub.Tick();
+				}
 			}
 			catch
 			{

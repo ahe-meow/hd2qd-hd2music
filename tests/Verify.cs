@@ -74,6 +74,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckReferences(asm);
             CheckText(asm, plugin);
             CheckQr(asm);
+            CheckDataHub(asm);
             CheckFfmpeg(asm);
             CheckBrowseApi(asm);
             CheckBrowseState(asm);
@@ -300,6 +301,45 @@ namespace Hd2Qd.HD2Music.Verify
                 Exception inner = e is TargetInvocationException tie ? tie.InnerException : e;
                 Fail("the QR encoder does not run: " + inner.Message);
             }
+        }
+
+        static void CheckDataHub(Assembly asm)
+        {
+            Type hub = asm.GetType("Hd2Qd.HD2Music.DataHub");
+            if (hub == null)
+            {
+                Fail("DataHub is missing");
+                return;
+            }
+            MethodInfo tick = hub.GetMethod("Tick", BindingFlags.Public | BindingFlags.Instance);
+            ConstructorInfo ctor = hub.GetConstructor(new[] { typeof(string), typeof(Func<int>) });
+            if (tick == null || ctor == null || tick.GetParameters().Length != 0)
+            {
+                Fail("DataHub does not expose Tick() and DataHub(string, Func<int>)");
+                return;
+            }
+            Array rows = hub.GetField("Known", BindingFlags.NonPublic | BindingFlags.Static)?.GetValue(null) as Array;
+            if (rows == null || rows.Length < 2)
+            {
+                Fail("DataHub must pin the signed payload of every shipping format");
+                return;
+            }
+            string sizes = "";
+            foreach (object row in rows)
+            {
+                Type payload = row.GetType();
+                string session = (string)payload.GetField("Session").GetValue(row);
+                long size = (long)payload.GetField("Size").GetValue(row);
+                string digest = (string)payload.GetField("Digest").GetValue(row);
+                if (!Regex.IsMatch(session ?? "", "^[0-9a-f]{24}$") || size <= 0 || size > 1048576
+                    || !Regex.IsMatch(digest ?? "", "^[0-9a-f]{64}$"))
+                {
+                    Fail("DataHub payload row is malformed: " + session + " / " + size);
+                    return;
+                }
+                sizes += (sizes.Length == 0 ? "" : " + ") + size;
+            }
+            Pass("Data Hub handshake wired: " + sizes + " byte payloads pinned by session, delivered only when the helper is absent");
         }
 
         static object engineOf(Assembly asm)

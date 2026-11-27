@@ -98,7 +98,54 @@ payload    ...\HD2Phone\hd2_music_data.dat
 - 模组侧对 `.stream` 的解密算法在 1.2.7 的壳里（`_72b()`），本次没有逆它——
   插件只搬运、不需要知道密钥。
 
-## 六、为什么上一轮的结论是错的
+## 六、1.2.6 里有同一份逻辑的明文（2026-11-28 补）
+
+1.2.7 把 `authorize` 编译进了 pyd，但 **1.2.6 把它加密打包在 `hd2_music_session.bin` 里**，
+而解包器 `ncm_session_loader.py` 是明文：
+
+```python
+CONTEXT = b'2x\xd1<\x02\x94H\xe6\xe8j%\xc8\xd8)\xc2S'
+LAYOUT  = ('cipher', 'nonce', 'tag', 'key')          # key 在最后 32 字节
+
+stream_key = hmac.digest(key, b'stream' + CONTEXT + nonce, 'sha256')
+pad        = hmac.digest(stream_key, (offset // 32).to_bytes(8, 'big'), 'sha256')  # 32 B 块 XOR
+mac_key    = hmac.digest(key, b'auth'   + CONTEXT + nonce, 'sha256')
+tag        = hmac.digest(mac_key, '/'.join(LAYOUT).encode() + cipher, 'sha256')
+```
+
+解开后是 7 145 字节的 Python，`authorize(pid)` 全文可读（见 `.analysis/authorize_126.py`）。
+它把上面第三节的推论全部坐实，并补上四条之前只能猜的事实：
+
+1. **media 就是 `.stream` 文件本身**（`return manifest['session'], stream.read()`）。
+2. **session 来自签名清单**（`manifest['session']`），不是随机数，1.2.6 是
+   `4611eedcff5adcb7ba9a36cb`，1.2.7 是 `b47b8bca95c7b43374b34f41`。
+3. **签名是 RSA-3072 PSS**（modulus/signature 各 384 B），公钥另有指纹自校验
+   `sha256(modulus + b'\x01\x00\x01') == TRUSTED_FINGERPRINT`。
+4. **`resource_hashes` 解析的是 Stingray patch**（magic `0xf0000011`，表偏移
+   `72 + 32*kinds`，每行 80 B 的 `<7Q6I`），用来确认补丁里那个 resource 的摘要。
+
+顺带暴露了官方助手自己的一个坑：`authorize` 在**游戏目录**里找 `<archive>.patch_*.stream`，
+而 Arsenal 部署时把这个文件写成 0 字节，于是 `stream.stat().st_size != stream_size`
+直接返回 `None`——交付失败。插件的实现因此先看游戏目录，再退到 Arsenal 库里的原始包。
+
+## 七、实现（1.7.1 起）
+
+`src/DataHub.cs`，约 300 行，纯 C#、无原生依赖：
+
+- 轮询 `hd2_music_start.dat`，校验「有结尾换行 + 至少两个冒号」。
+- 候选 `.stream` 顺序：游戏 `data/` → 宿主 `config.json` 的 `mods_dir` 与
+  `library_folders` → `Documents\Helldivers2\mods` → 数据目录里的
+  `hd2_music_stream.bin` 缓存。
+- 只交付 sha256 命中 `Known` 表的字节（1.2.6 的 154 907 / 1.2.7 的 166 097），
+  未知 session 也接受——只要摘要可信，补丁升级不会静默断掉交付。
+- `Util.AtomicWrite` 写 `data.dat` 与 `ready.dat`，同一请求不重复交付，
+  `start.dat` 消失后重置（模组关闭再开会重新交付）。
+- **只在 `!IsLockedOut` 时工作**：助手在跑时它拥有握手，插件不抢。
+
+`tests/Verify.cs` 的 `CheckDataHub` 固化了两条清单的格式与存在性，
+每次 `build.bat` 都会跑。
+
+## 八、为什么上一轮的结论是错的
 
 上一轮据 `docs/mod-reverse-1.2.4.md` 第三节推断「主体由助手在握手后交付并校验，
 属于密码学边界」。方向没错（确实是外部交付），但把「交付」误当成「解密生成」。
