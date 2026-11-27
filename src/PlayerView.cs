@@ -50,6 +50,8 @@ namespace Hd2Qd.HD2Music
         bool _auditioning;
         string _lyricSheetSignature = "";
         int _lyricShown = -1;
+        // blank rows above and below so the sung line can sit at the vertical centre
+        const int LyricPad = 12;
         SpectrumBars _spectrum;
         ListBox _peek;
         TextBlock _peekCount;
@@ -468,7 +470,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.8.2 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.8.4 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1383,18 +1385,11 @@ namespace Hd2Qd.HD2Music
             card.Padding = new Thickness(12.0, 10.0, 12.0, 10.0);
             card.VerticalAlignment = VerticalAlignment.Stretch;
             Grid inner = new Grid();
-            inner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(30.0) });
+            inner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(26.0) });
             inner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.0, GridUnitType.Star) });
 
+            // no heading: the in-game sheet already owns the title, and the rows speak for themselves
             DockPanel head = new DockPanel { LastChildFill = false, Margin = new Thickness(0.0) };
-            head.Children.Add(new TextBlock
-            {
-                Text = "LYRIC SHEET",
-                FontFamily = Theme.Font("Mono"),
-                FontSize = 8.5,
-                Foreground = Theme.Muted,
-                VerticalAlignment = VerticalAlignment.Center
-            });
             _auditionButton = GhostButton("试听本句", delegate { ToggleAudition(); });
             _auditionButton.Height = 22.0;
             _auditionButton.MinHeight = 22.0;
@@ -1455,54 +1450,137 @@ namespace Hd2Qd.HD2Music
             {
                 _lyricSheetSignature = signature;
                 _lyricSheet.Items.Clear();
+                for (int i = 0; i < LyricPad; i++)
+                {
+                    _lyricSheet.Items.Add(BlankLyricRow());
+                }
                 foreach (LyricLine line in state.LyricRows)
                 {
                     Grid row = new Grid();
                     row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(46.0) });
                     row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
-                    TextBlock at = Mono(Util.FormatTime(line.At), 8.5, Theme.Muted);
-                    at.VerticalAlignment = VerticalAlignment.Center;
+                    TextBlock at = Mono(Util.FormatTime(line.At), 10.0, Theme.Muted);
+                    at.VerticalAlignment = VerticalAlignment.Top;
+                    at.Margin = new Thickness(0.0, 5.0, 0.0, 0.0);
                     row.Children.Add(at);
-                    TextBlock words = new TextBlock
+
+                    StackPanel words = new StackPanel();
+                    TextBlock text = new TextBlock
                     {
-                        Text = string.IsNullOrEmpty(line.Translation) ? line.Text : line.Text + "  " + line.Translation,
-                        FontSize = 11.0,
+                        Text = line.Text,
+                        FontSize = 15.0,
                         Foreground = Theme.Muted,
-                        TextTrimming = TextTrimming.CharacterEllipsis,
-                        VerticalAlignment = VerticalAlignment.Center
+                        TextWrapping = TextWrapping.Wrap,
+                        Margin = new Thickness(0.0, 2.0, 0.0, 0.0)
                     };
+                    words.Children.Add(text);
+                    TextBlock translation = new TextBlock
+                    {
+                        Text = line.Translation ?? "",
+                        FontSize = 12.5,
+                        Foreground = Theme.Muted,
+                        Opacity = 0.78,
+                        TextWrapping = TextWrapping.Wrap,
+                        Visibility = string.IsNullOrEmpty(line.Translation) ? Visibility.Collapsed : Visibility.Visible,
+                        Margin = new Thickness(0.0, 4.0, 0.0, 2.0)
+                    };
+                    words.Children.Add(translation);
                     Grid.SetColumn(words, 1);
                     row.Children.Add(words);
                     row.Background = Brushes.Transparent;
-                    _lyricSheet.Items.Add(new ListBoxItem { Tag = line.At, Content = row });
+                    row.Tag = new TextBlock[] { at, text, translation };
+                    _lyricSheet.Items.Add(new ListBoxItem
+                    {
+                        Tag = line.At,
+                        Content = row,
+                        Padding = new Thickness(0.0, 5.0, 0.0, 5.0)
+                    });
+                }
+                for (int i = 0; i < LyricPad; i++)
+                {
+                    _lyricSheet.Items.Add(BlankLyricRow());
                 }
                 _lyricShown = -1;
             }
-            if (state.LyricIndex != _lyricShown)
+            int current = state.LyricIndex + LyricPad;
+            if (current != _lyricShown)
             {
-                _lyricShown = state.LyricIndex;
+                _lyricShown = current;
                 for (int i = 0; i < _lyricSheet.Items.Count; i++)
                 {
                     if (_lyricSheet.Items[i] is not ListBoxItem item || item.Content is not Grid row)
                     {
                         continue;
                     }
-                    bool current = i == state.LyricIndex;
-                    row.Background = current ? Theme.Ground900 : Brushes.Transparent;
-                    foreach (UIElement child in row.Children)
+                    bool active = i == current;
+                    row.Background = active ? Theme.Ground900 : Brushes.Transparent;
+                    if (row.Tag is TextBlock[] blocks)
                     {
-                        if (child is TextBlock block)
-                        {
-                            block.Foreground = current ? Theme.Yellow : Theme.Muted;
-                            block.FontWeight = current ? FontWeights.SemiBold : FontWeights.Normal;
-                        }
+                        blocks[0].Foreground = active ? Theme.Yellow : Theme.Muted;
+                        blocks[0].FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
+                        blocks[1].Foreground = active ? Theme.Yellow : Theme.Muted;
+                        blocks[1].FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
+                        blocks[1].FontSize = active ? 20.0 : 15.0;
+                        blocks[2].Foreground = active ? Theme.Yellow : Theme.Muted;
+                        blocks[2].FontSize = active ? 14.0 : 12.5;
                     }
                 }
-                if (state.LyricIndex >= 0 && state.LyricIndex < _lyricSheet.Items.Count)
+                if (state.LyricIndex >= 0 && state.LyricIndex < state.LyricRows.Count)
                 {
-                    _lyricSheet.ScrollIntoView(_lyricSheet.Items[state.LyricIndex]);
+                    CenterLyric(current);
                 }
             }
+        }
+
+        static ListBoxItem BlankLyricRow()
+        {
+            return new ListBoxItem
+            {
+                Content = new TextBlock { Text = "", Height = 26.0 },
+                IsHitTestVisible = false,
+                Focusable = false
+            };
+        }
+
+        /// <summary>Keep the sung line at the middle of the viewport instead of letting
+        /// ScrollIntoView park it against the bottom edge.</summary>
+        /// <summary>
+        /// The ListBox scrolls in logical units: ExtentHeight is the number of rows and
+        /// ViewportHeight the number of visible rows, not pixels. Scrolling to the current
+        /// row minus half a viewport keeps it in the middle even at the start or end of a
+        /// song, because there are blank rows on both sides.
+        /// </summary>
+        void CenterLyric(int index)
+        {
+            if (index < 0 || index >= _lyricSheet.Items.Count)
+            {
+                return;
+            }
+            ScrollViewer viewer = FindScrollViewer(_lyricSheet);
+            if (viewer == null)
+            {
+                return;
+            }
+            double rows = viewer.ViewportHeight > 0.0 ? viewer.ViewportHeight : 11.0;
+            viewer.ScrollToVerticalOffset(Math.Max(0.0, index - rows / 2.0 + 0.5));
+        }
+
+        static ScrollViewer FindScrollViewer(DependencyObject node)
+        {
+            if (node is ScrollViewer viewer)
+            {
+                return viewer;
+            }
+            int count = VisualTreeHelper.GetChildrenCount(node);
+            for (int i = 0; i < count; i++)
+            {
+                ScrollViewer found = FindScrollViewer(VisualTreeHelper.GetChild(node, i));
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+            return null;
         }
 
         Grid TableHeader(string a, string b, string c, string d = null)
