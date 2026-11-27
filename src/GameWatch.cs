@@ -23,7 +23,26 @@ public sealed class GameWatch
 
 	private volatile bool _forced;
 
+	private volatile bool _modern;
+
 	public object Token => _token;
+
+	/// <summary>
+	/// Set while the Data Hub has answered a handshake for the pid now running. 1.2.6 moved
+	/// the body out of the patch and behind that handshake, so the heartbeat can only appear
+	/// after we deliver — gating on the heartbeat first leaves both sides waiting forever.
+	/// </summary>
+	public bool Modern
+	{
+		get
+		{
+			return _modern;
+		}
+		set
+		{
+			_modern = value;
+		}
+	}
 
 	public int Pid => _pid;
 
@@ -111,7 +130,12 @@ public sealed class GameWatch
 			_stamp = num2.Value;
 		}
 		long num3 = Now();
-		object obj2 = ((!num.HasValue || num2.GetValueOrDefault() == 0L) ? null : ((_token != null && num.Value == _pid) ? _token : ((-1 > num3 - _stamp || num3 - _stamp >= 5) ? null : new object())));
+		long age = num3 - _stamp;
+		// a 1.2.4-era body ships inside the patch and beats on its own; a 1.2.6+ body only
+		// exists after we answer the handshake, so that handshake is the proof, not the beat
+		bool beat = num2.GetValueOrDefault() != 0L && !(-1 > age || age >= 5);
+		bool handed = _modern && num.HasValue;
+		object obj2 = ((!num.HasValue || (!beat && !handed)) ? null : ((_token != null && num.Value == _pid) ? _token : new object()));
 		_pid = num.GetValueOrDefault();
 		if (obj2 == _token)
 		{

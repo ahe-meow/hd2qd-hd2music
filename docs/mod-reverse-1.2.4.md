@@ -137,5 +137,6 @@
 
 遗留（不影响播放）：
 
-- `deployment` 仍不写（见 `docs/upstream-1.2.7-parity.md` 第五节）。
+- `deployment` 1.7.2 起按实际结果写（`verified`/`waiting`），见 `docs/upstream-1.2.7-parity.md` 第五节。
 - 1.2.7 的诊断页字段（`deployment` 的呈现方式、`诊断页` 的其它行）无法在包内验证。
+- **1.2.6 起主体搬到握手之后，`ncm_game_alive.txt` 不再能单独充当「游戏在」的判据**（会与握手互相等待），1.7.2 已改为「心跳或握手任一成立」，见 `docs/data-hub-handshake.md` 第九节。

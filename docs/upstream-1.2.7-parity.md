@@ -94,13 +94,15 @@ Mod 侧（`HD2 Music - Arsenal.zip` 1.2.3 → 1.2.7）同步变化，可见于 `
    `lyric_window`/`audition`/`audition_stop` 三个命令 + UI。属于播放页增强，不影响基本播放。
 
 9. **连接诊断**（~30 行，按需）
-   只跟 `diagnostic_recovery`（最近一次续播事件）。`deployment` 不写——实测是助手侧握手状态，见第五节。
+   跟 `diagnostic_recovery`（最近一次续播事件）与 `deployment`（握手状态，1.7.2 起按实际结果写，见第五节）。
 
 **不建议跟进**：内嵌 CPython 运行时、`_hd2runtime.pyd`、TUI/拼音输入、SMTC 的 Next Lyric 标记、3D 歌词与配色、封面贴图分块优化——这些在 mod 侧或 SMTC 程序侧，插件不参与。
 
 ## 五、`deployment` 实测（2026-11-28）
 
-结论：**不写该字段**。它是助手侧的 Data Hub 握手/验签状态，不是任务加载或空投状态；缺省时最坏结果是游戏内「连接诊断」那一行没有值，播放、歌词、队列都不经过它。
+**1.7.2 起写该字段**，取值用的就是插件的真实结果，不是伪造：模组活着（心跳或握手任一成立）写 `verified`，否则写 `waiting`。
+
+早先的结论是「不写」，理由是「插件不参与握手，只能写 `waiting`，写进去等于自报验签失败」。这个理由在 1.7.1 实现 Data Hub 之后就不成立了——插件现在**就是**握手方，`verified` 是它可以负责的事实。
 
 取值（用助手自带 `runtime/python.exe` 实跑 `GameWatch.deployment_status()`）：
 
@@ -119,7 +121,7 @@ Mod 侧（`HD2 Music - Arsenal.zip` 1.2.3 → 1.2.7）同步变化，可见于 `
 - 壳的加载是有门的：`on_enable` 通过 `loadstring('return 0x57')==87` 探针后，`on_update` 必须 `_02e()`（写 start、读 ready 比对 token）与 `_72b()`（解析 data.dat）都成功，才会把 `startup` 块 `loadstring` 起来。**助手不运行时模组不会加载自己的主体**，这与《在线版使用说明》「需要 MDL3、Data Hub 和在线助手」一致。
 - 使用说明第 38 行把「助手／资源验签／Data Hub／歌词来源／绘制状态」列在「设置 → 模组设置 → 连接诊断」里，`deployment` 的消费点就在这里。
 
-因此插件的取舍：不伪造值。助手正常运行时该字段恒为 `verified`；插件不参与握手，能写的只有 `waiting`（= 未验签），写进去反而可能在诊断页显示成异常状态。缺省是 nil，等价于「未知」，更中性。
+因此插件的取舍：**写实际值**，不猜。1.7.2 的映射是 `GameWatch.Token != null ? "verified" : "waiting"`，也就是「模组存活」的两种证明（1.2.4 的心跳、1.2.6+ 的握手）任一成立即 `verified`。缺省（不写）在诊断页读作「未知」，比一个假的 `waiting` 更糟——`waiting` 会让人以为是握手没成。
 
 想在游戏里复核，用 `.analysis/deployment_toggle.py`：`--pin verified --minutes 3` 在插件播放期间持续把该行钉进 `ncm_state.txt`（插件每 200 ms 重写，所以必须循环补），对比 `--off` 时诊断页那一行与 3D 歌词、2D 歌词、队列编辑是否一致。
 

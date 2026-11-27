@@ -4,3 +4,4 @@ release/
 *.user
 .vs/
 .analysis/
+.workbuddy/

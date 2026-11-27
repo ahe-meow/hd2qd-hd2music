@@ -59,11 +59,28 @@ sealed class DataHub
 
 	string _note;
 
+	bool _handshaked;
+
+	int _handshakePid;
+
 	public string Note
 	{
 		get
 		{
 			return _note;
+		}
+	}
+
+	/// <summary>
+	/// True once we have answered a handshake for the game process that is running now. A
+	/// new session has a new pid, so the flag lapses by itself instead of leaking across
+	/// restarts; see GameWatch.Modern for why this counts as "the mod is alive".
+	/// </summary>
+	public bool Handshaked
+	{
+		get
+		{
+			return _handshaked && (_handshakePid <= 0 || _handshakePid == _pid());
 		}
 	}
 
@@ -332,6 +349,8 @@ sealed class DataHub
 			Util.AtomicWrite(Path.Combine(_root, "hd2_music_data.dat"), _media);
 			Util.AtomicWrite(Path.Combine(_root, "hd2_music_ready.dat"), Encoding.ASCII.GetBytes(request));
 			_approved = request;
+			_handshaked = true;
+			_handshakePid = _pid();
 			_note = null;
 		}
 		catch (IOException error)

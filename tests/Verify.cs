@@ -339,7 +339,16 @@ namespace Hd2Qd.HD2Music.Verify
                 }
                 sizes += (sizes.Length == 0 ? "" : " + ") + size;
             }
-            Pass("Data Hub handshake wired: " + sizes + " byte payloads pinned by session, delivered only when the helper is absent");
+            // 1.2.6 moved the body behind the handshake, so the heartbeat cannot precede it:
+            // if these two ever stop being wired the plugin deadlocks against a live game
+            PropertyInfo handshaked = hub.GetProperty("Handshaked");
+            PropertyInfo modern = asm.GetType("Hd2Qd.HD2Music.GameWatch")?.GetProperty("Modern");
+            if (handshaked == null || modern == null)
+            {
+                Fail("a delivered handshake must count as liveness (DataHub.Handshaked -> GameWatch.Modern)");
+                return;
+            }
+            Pass("Data Hub handshake wired: " + sizes + " byte payloads pinned by session, delivered only when the helper is absent, and counted as liveness until the mod beats back");
         }
 
         static object engineOf(Assembly asm)

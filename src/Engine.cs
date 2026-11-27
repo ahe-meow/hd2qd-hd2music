@@ -1032,9 +1032,13 @@ public sealed class Engine : IDisposable
 			{
 				// while the helper holds the lock it owns the handshake; we only take over
 				// when it is absent, which is the whole point of shipping this here
-				if (_dataHub != null && !IsLockedOut)
+				if (_dataHub != null)
 				{
-					_dataHub.Tick();
+					if (!IsLockedOut)
+					{
+						_dataHub.Tick();
+					}
+					Player.GameWatch.Modern = _dataHub.Handshaked;
 				}
 			}
 			catch
@@ -1354,10 +1358,30 @@ public sealed class Engine : IDisposable
 		{
 			lock (_lock)
 			{
-				_notice = "请先进入游戏并启用新版播放器";
+				_notice = NotReadyNotice();
 			}
 		}
 		return false;
+	}
+
+	/// <summary>
+	/// All three ways of being unplayable used to print the same sentence, which sent a user
+	/// whose game was already running looking for a problem that was not there. Name them.
+	/// </summary>
+	private string NotReadyNotice()
+	{
+		if (Player.GameWatch.Pid <= 0)
+		{
+			return WaitingForGame;
+		}
+		DataHub hub = _dataHub;
+		if (hub == null || !hub.Handshaked)
+		{
+			return "游戏已启动，但模组没有向插件请求播放器（请确认 HD2 Music 已在游戏中启用）";
+		}
+		// it took our payload but never came back: the mod's own loader gave up, and its
+		// reason is only visible from inside the game
+		return (hub.Note == null) ? "播放器资源已交付，游戏内主体尚未就绪（模组加载失败）" : hub.Note;
 	}
 
 	public UiState Snapshot()
@@ -4093,6 +4117,9 @@ public sealed class Engine : IDisposable
 			"track_first=" + trackFirst,
 			"queue_revision=" + _queueRevision.ToString(CultureInfo.InvariantCulture),
 			"lyric_translation=" + Util.Clean(value6),
+			// the helper prints its session verdict here on every frame; the mod's diagnostics
+			// page shows it, and anything but "verified" reads as "not ready"
+			"deployment=" + ((Player.GameWatch.Token != null) ? "verified" : "waiting"),
 			"lyric_at=" + ((index >= 0 && index < list7.Count) ? list7[index].At.ToString("0.000", CultureInfo.InvariantCulture) : ""),
 			"lyric_total=" + list7.Count.ToString(CultureInfo.InvariantCulture),
 			"diagnostic_recovery=" + Util.Clean(recovery),
