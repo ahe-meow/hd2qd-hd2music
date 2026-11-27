@@ -4209,6 +4209,76 @@ public sealed class Engine : IDisposable
 		}
 	}
 
+	/// <summary>Write everything a bug report needs into one file next to the state file: what the
+	/// plugin thinks it is doing, what the decoder is doing, and whether the files the game reads
+	/// are being written at all.</summary>
+	public string ExportDiagnostics()
+	{
+		List<string> list = new List<string>();
+		string track = "";
+		lock (_lock)
+		{
+			list.Add("time=" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
+			list.Add("version=" + typeof(Engine).Assembly.GetName().Version);
+			list.Add("edition=" + (Ffmpeg.Embedded ? "full" : "lite"));
+			list.Add("ffmpeg=" + FfmpegPath + " exists=" + (File.Exists(FfmpegPath) ? "yes" : "no"));
+			list.Add("state_file=" + Path.Combine(Root, "ncm_state.txt"));
+			list.Add("account=" + Masked(_account));
+			list.Add("locked_out=" + (_lockedOut ? "yes" : "no"));
+			list.Add("state=" + _state + " notice=" + _notice);
+			list.Add("list=" + _currentList + " (" + _currentListId + ")");
+			if (_index >= 0 && _index < _queueTracks.Count)
+			{
+				track = _queueTracks[_index].Artist + " - " + _queueTracks[_index].Title;
+			}
+			list.Add("track=" + track);
+			list.Add("position=" + (_index + 1) + "/" + _queueTracks.Count + " revision=" + _queueRevision);
+			list.Add("quality=" + _quality + " order=" + _order + " automix=" + (_automix ? "on" : "off"));
+			list.Add("lyrics=" + (_lyricsEnabled ? "on" : "off") + " rows=" + _lyricsRows.Count + " offset=" + _lyricOffset);
+			list.Add("seek_serial=" + _seekSerial + " audition=" + (_audition ? "on" : "off") + " trying=" + (_seeking ? "yes" : "no"));
+			list.Add("recovery=" + _recovery + " resume_at=" + (_resumePosition.HasValue ? Moment(_resumePosition.Value) : "-")
+				+ " attempts=" + _resumeAttempts);
+			list.Add("radio=" + _radioState + " more=" + (_radioMore.Length == 0 ? "-" : _radioMore) + " offset=" + _radioOffset);
+			list.Add("podcast=" + _podcastState + " more=" + (_podcastMore.Length == 0 ? "-" : _podcastMore) + " offset=" + _podcastOffset);
+			list.Add("search=" + _searchState + " results=" + _searchResults.Count + " more=" + (_searchMore.Length == 0 ? "-" : _searchMore));
+			if (Player != null)
+			{
+				list.Add("decoder=active:" + (Player.Active ? "yes" : "no") + " awaiting:" + (Player.AwaitingPlay ? "yes" : "no")
+					+ " state:" + Player.Status.State + " pos:" + Number(Player.Status.Pos) + " dur:" + Number(Player.Status.Dur)
+					+ " outcome:" + (Player.Outcome.HasValue ? Player.Outcome.Value.ToString(CultureInfo.InvariantCulture) : "-"));
+			}
+		}
+		string file = Path.Combine(Root, "ncm_diagnostics.txt");
+		try
+		{
+			FileInfo info = new FileInfo(Path.Combine(Root, "ncm_state.txt"));
+			list.Add("state_file_written=" + (info.Exists ? info.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) : "never"));
+			Util.AtomicWrite(file, string.Join("\n", list) + "\n");
+			lock (_lock)
+			{
+				_notice = "已导出诊断：" + file;
+			}
+		}
+		catch (Exception ex)
+		{
+			lock (_lock)
+			{
+				_notice = "诊断导出失败：" + ex.Message;
+			}
+		}
+		return file;
+	}
+
+	/// <summary>Enough of an account name to recognise your own report, not enough to leak it.</summary>
+	private static string Masked(string value)
+	{
+		if (string.IsNullOrEmpty(value))
+		{
+			return "-";
+		}
+		return value.Length <= 2 ? "***" : value.Substring(0, 2) + "***";
+	}
+
 	private static string Number(double value)
 	{
 		if (double.IsNaN(value) || double.IsInfinity(value))

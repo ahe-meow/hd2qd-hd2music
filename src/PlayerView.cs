@@ -907,6 +907,14 @@ namespace Hd2Qd.HD2Music
             _sysTrack = SysRow(body, "TRACK");
             _sysFfmpeg = SysRow(body, "FFMPEG");
             _sysHelper = SysRow(body, "HELPER");
+            Button diagnostics = GhostButton("导出诊断", delegate { _engine.ExportDiagnostics(); });
+            diagnostics.Height = 26.0;
+            diagnostics.MinHeight = 26.0;
+            diagnostics.FontSize = 10.0;
+            diagnostics.Padding = new Thickness(0.0);
+            diagnostics.Margin = new Thickness(0.0, 12.0, 0.0, 0.0);
+            diagnostics.ToolTip = "把当前状态写成 ncm_diagnostics.txt，排查问题时附上这个文件";
+            body.Children.Add(diagnostics);
             card.Child = body;
             return card;
         }
