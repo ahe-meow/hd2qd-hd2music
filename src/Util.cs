@@ -219,6 +219,28 @@ internal static class Util
 		}
 	}
 
+	/// <summary>
+	/// A line in ncm_plugin.log. Nothing here is allowed to throw or to be slow: this runs on
+	/// the state loop, and the log exists precisely for the runs where something else broke.
+	/// Kept to one file by dropping it at 256 KB rather than growing without a limit.
+	/// </summary>
+	public static void Log(string line)
+	{
+		try
+		{
+			string path = System.IO.Path.Combine(Root, "ncm_plugin.log");
+			FileInfo info = new FileInfo(path);
+			if (info.Exists && info.Length > 262144)
+			{
+				File.Delete(path);
+			}
+			File.AppendAllText(path, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + " " + line + "\n", Encoding.UTF8);
+		}
+		catch
+		{
+		}
+	}
+
 	public static string FormatTime(double seconds)
 	{
 		if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0.0)

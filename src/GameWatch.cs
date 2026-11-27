@@ -25,7 +25,18 @@ public sealed class GameWatch
 
 	private volatile bool _modern;
 
+	private volatile bool _beat;
+
 	public object Token => _token;
+
+	/// <summary>True when the mod itself beat back recently — the only proof a body got loaded.</summary>
+	public bool Beat
+	{
+		get
+		{
+			return _beat;
+		}
+	}
 
 	/// <summary>
 	/// Set while the Data Hub has answered a handshake for the pid now running. 1.2.6 moved
@@ -134,6 +145,7 @@ public sealed class GameWatch
 		// a 1.2.4-era body ships inside the patch and beats on its own; a 1.2.6+ body only
 		// exists after we answer the handshake, so that handshake is the proof, not the beat
 		bool beat = num2.GetValueOrDefault() != 0L && !(-1 > age || age >= 5);
+		_beat = beat;
 		bool handed = _modern && num.HasValue;
 		object obj2 = ((!num.HasValue || (!beat && !handed)) ? null : ((_token != null && num.Value == _pid) ? _token : new object()));
 		_pid = num.GetValueOrDefault();

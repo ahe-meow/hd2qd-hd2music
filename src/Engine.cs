@@ -101,6 +101,13 @@ public sealed class Engine : IDisposable
 
 	private bool _lockedOut;
 
+	// pid that owned ncm_helper.lock when we last failed to take it, 0 when unknown
+	private int _lockHolder;
+
+	private DateTime _nextLockTry;
+
+	private DateTime _nextTrace;
+
 	private static int _commandSerial;
 
 	private double _qrExpires;
@@ -618,9 +625,15 @@ public sealed class Engine : IDisposable
 		FfmpegPath = ffmpegPath;
 	}
 
-	public void Start()
+	private static readonly string OwnerPath = Path.Combine(Util.Root, "ncm_plugin_owner.txt");
+
+	/// <summary>
+	/// Take ncm_helper.lock. The official helper opens the same file and locks byte 0, so the
+	/// region is what decides who publishes; the pid in ncm_plugin_owner.txt is only a note to
+	/// ourselves — writing into the lock file would move the helper's own lock off byte 0.
+	/// </summary>
+	private bool TryLock()
 	{
-		Directory.CreateDirectory(Root);
 		try
 		{
 			_lockFile = new FileStream(Path.Combine(Root, "ncm_helper.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite);
@@ -628,9 +641,83 @@ public sealed class Engine : IDisposable
 		}
 		catch
 		{
+			if (_lockFile != null)
+			{
+				try
+				{
+					_lockFile.Close();
+				}
+				catch
+				{
+				}
+				_lockFile = null;
+			}
+			_lockHolder = ReadOwner();
+			return false;
+		}
+		_lockedOut = false;
+		_lockHolder = 0;
+		Util.AtomicWrite(OwnerPath, Process.GetCurrentProcess().Id.ToString(CultureInfo.InvariantCulture) + "\n");
+		return true;
+	}
+
+	private static int ReadOwner()
+	{
+		string text = Util.ReadText(OwnerPath);
+		int pid;
+		return (text != null && int.TryParse(text.Trim(), out pid)) ? pid : 0;
+	}
+
+	private static string HolderName(int pid)	{
+		if (pid <= 0)
+		{
+			return "";
+		}
+		try
+		{
+			using (Process process = Process.GetProcessById(pid))
+			{
+				return process.ProcessName;
+			}
+		}
+		catch
+		{
+			return "";
+		}
+	}
+
+	/// <summary>
+	/// This window could not take the lock, so it is not the one playing. When the holder is
+	/// the official helper that is by design; when it is a second manager window the window
+	/// just looks dead, which is what "same message as last time" actually was.
+	/// </summary>
+	private string LockedOutNotice()
+	{
+		if (_lockHolder <= 0)
+		{
+			return "另一个进程持有播放锁，本窗口暂时不播放";
+		}
+		if (HolderName(_lockHolder).IndexOf("python", StringComparison.OrdinalIgnoreCase) >= 0)
+		{
+			return "网易云在线助手已在运行，播放交给它";
+		}
+		return "另一个管理器窗口（进程 " + _lockHolder.ToString(CultureInfo.InvariantCulture) + "）正在接管，关掉它后本窗口会自动恢复";
+	}
+
+	public void Start()
+	{
+		Directory.CreateDirectory(Root);
+		// one shot was the bug: a helper that was merely shutting down, or a second manager
+		// window, left this instance with the lock refusal it could never retry, and it spent
+		// the rest of the session doing nothing at all while its notice stayed stale
+		if (!TryLock())
+		{
 			_lockedOut = true;
 			_notice = "网易云在线助手已经在运行（另一个进程持有锁）";
+			// try again from the state loop; see LoopRun
+			_nextLockTry = DateTime.UtcNow.AddSeconds(2.0);
 		}
+		Util.Log("start version=" + typeof(Engine).Assembly.GetName().Version + " locked_out=" + (_lockedOut ? "yes" : "no") + " holder=" + (_lockHolder > 0 ? _lockHolder.ToString(CultureInfo.InvariantCulture) : "-"));
 		Api = new NeteaseClient(new Session(Path.Combine(Root, "ncm_session.json")));
 		Player = new StreamPlayer(FfmpegPath, Path.Combine(Root, "ncm_game_alive.txt"));
 		Player.GameWatch.Start();
@@ -745,6 +832,14 @@ public sealed class Engine : IDisposable
 		// the files are the running helper's when this player never got the lock
 		if (!_lockedOut)
 		{
+			Util.Log("stop");
+			try
+			{
+				File.Delete(OwnerPath);
+			}
+			catch
+			{
+			}
 			try
 			{
 				File.Delete(Path.Combine(Root, "ncm_state.txt"));
@@ -1030,6 +1125,21 @@ public sealed class Engine : IDisposable
 			}
 			try
 			{
+				// a helper that is closing, or a second manager window, releases the lock on
+				// its way out: without this the whole session stays mute for nothing
+				if (_lockedOut && DateTime.UtcNow >= _nextLockTry)
+				{
+					_nextLockTry = DateTime.UtcNow.AddSeconds(2.0);
+					int was = _lockHolder;
+					if (TryLock())
+					{
+						lock (_lock)
+						{
+							_notice = "";
+						}
+						Util.Log("lock acquired on retry, holder was " + ((was > 0) ? was.ToString(CultureInfo.InvariantCulture) : "?"));
+					}
+				}
 				// while the helper holds the lock it owns the handshake; we only take over
 				// when it is absent, which is the whole point of shipping this here
 				if (_dataHub != null)
@@ -1039,6 +1149,11 @@ public sealed class Engine : IDisposable
 						_dataHub.Tick();
 					}
 					Player.GameWatch.Modern = _dataHub.Handshaked;
+				}
+				if (DateTime.UtcNow >= _nextTrace)
+				{
+					_nextTrace = DateTime.UtcNow.AddSeconds(10.0);
+					Trace();
 				}
 			}
 			catch
@@ -1055,6 +1170,28 @@ public sealed class Engine : IDisposable
 			// the word marks from this file, and 200 ms of staleness is visible there
 			Thread.Sleep(Busy() ? 100 : 200);
 		}
+	}
+
+	/// <summary>
+	/// Ten seconds of truth in ncm_plugin.log. Four facts settle every report about "the game
+	/// shows nothing": whether we own the lock, whether the game was seen, whether the mod beat
+	/// back, and whether it took our payload.
+	/// </summary>
+	private void Trace()
+	{
+		string state;
+		lock (_lock)
+		{
+			state = _state;
+		}
+		DataHub hub = _dataHub;
+		Util.Log("tick locked_out=" + (_lockedOut ? "yes" : "no")
+			+ " pid=" + Player.GameWatch.Pid.ToString(CultureInfo.InvariantCulture)
+			+ " beat=" + (Player.GameWatch.Beat ? "yes" : "no")
+			+ " handed=" + ((hub != null && hub.Handshaked) ? "yes" : "no")
+			+ " token=" + ((Player.GameWatch.Token != null) ? "yes" : "no")
+			+ " state=" + state
+			+ ((hub != null && hub.Note != null) ? (" hub=" + hub.Note) : ""));
 	}
 
 	private void SpectrumRun()
@@ -2788,6 +2925,10 @@ public sealed class Engine : IDisposable
 	{
 		if (_lockedOut)
 		{
+			lock (_lock)
+			{
+				_notice = LockedOutNotice();
+			}
 			DelegateTrack(index);
 			return;
 		}
@@ -2801,6 +2942,10 @@ public sealed class Engine : IDisposable
 	{
 		if (_lockedOut)
 		{
+			lock (_lock)
+			{
+				_notice = LockedOutNotice();
+			}
 			DelegateTrack(index);
 			return;
 		}
@@ -4277,6 +4422,11 @@ public sealed class Engine : IDisposable
 			list.Add("state_file=" + Path.Combine(Root, "ncm_state.txt"));
 			list.Add("account=" + Masked(_account));
 			list.Add("locked_out=" + (_lockedOut ? "yes" : "no"));
+			list.Add("lock_holder=" + ((_lockHolder > 0) ? (_lockHolder.ToString(CultureInfo.InvariantCulture) + " " + HolderName(_lockHolder)) : "-"));
+			DataHub hub = _dataHub;
+			list.Add("hub_handshaked=" + ((hub != null && hub.Handshaked) ? "yes" : "no") + " hub_note=" + ((hub != null && hub.Note != null) ? hub.Note : "-"));
+			list.Add("game_pid=" + Player.GameWatch.Pid.ToString(CultureInfo.InvariantCulture) + " heartbeat=" + (Player.GameWatch.Beat ? "yes" : "no") + " token=" + ((Player.GameWatch.Token != null) ? "yes" : "no"));
+			list.Add("log=" + Path.Combine(Root, "ncm_plugin.log"));
 			list.Add("state=" + _state + " notice=" + _notice);
 			list.Add("list=" + _currentList + " (" + _currentListId + ")");
 			if (_index >= 0 && _index < _queueTracks.Count)

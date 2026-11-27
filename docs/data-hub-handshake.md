@@ -191,3 +191,41 @@ tag        = hmac.digest(mac_key, '/'.join(LAYOUT).encode() + cipher, 'sha256')
 | 交出载荷后主体没起来 | `播放器资源已交付，游戏内主体尚未就绪（模组加载失败）` |
 
 **仍未确定**：这次故障里主体为什么没加载。握手成功之后，壳的 `on_update` 要依次过 `_cd1()`（用 `font_masks` 里的两段 16 字节派生密钥）、`_65e()`（每帧解 12 个 64 B 块）、`_6b4()`（解压）、`_b15()`（`loadstring`）。`_b15` 里还有一道自检：`loadstring` 前后各取一次 `debug.gethook()`，若变了就直接 `return`（不返回函数、不报错）——MDL3 的 `E_BUDGET` 正是靠指令计数/调试钩子实现的，这条路径会在无日志的情况下永久放弃。要在游戏里证实，得看 MDL3 日志在握手时刻之后有没有 `E_BUDGET`，以及模组是否连 `ncm_state.txt` 都没开始读。
+
+## 十、真正让窗口一句话不说的：锁（2026-11-28 第二次实测，1.7.3 修）
+
+第九节发版后复测，现象照旧：「看不到模组载入」「不能播放」「提示和上次一模一样」。
+
+**取证**：玩家导出的 `%LOCALAPPDATA%\HD2Phone\ncm_diagnostics.txt`（02:33:40）：
+
+```
+version=1.7.2.0
+locked_out=yes
+```
+
+`_lockedOut` 不是提示语层面的开关，它把整条链路都掐了：
+
+| 位置 | 被锁后发生什么 |
+| --- | --- |
+| `Publish()` | 第一行 `return`——**`ncm_state.txt` 一个字节都不写**，模组读到的是「没有播放器」 |
+| `DataHub.Tick()` | 跳过——**不参与握手** |
+| `StartPlayAt()` | `_lockedOut` 判断在 `CheckGame()` **之前**就 `return`——按播放毫无反应，`_notice` 也不会被刷新 |
+
+最后一条正是「提示和上次相同」的来源：不是又判断了一次，而是**这条提示从上一个会话冻结到现在**，任何操作都没能覆盖它。
+
+**谁拿走了锁**：`ncm_state.txt` 在 02:35 已不存在，而删除它的唯一位置是 `Dispose()` 里的 `if (!_lockedOut)`——也就是说，**必须存在另一个持有锁的实例**，否则没人会删。同一时刻被用户操作的那个实例却报 `locked_out=yes`。两个实例并存，可见的那个输了。02:31:46 那次成功交付（166 097 B）是持锁实例做的。
+
+`EnsureEngine()` 用静态字段做单例，但静态字段是**每个 AppDomain 一份**：宿主若在两个加载上下文里各起一次插件（或用户开了两个管理器窗口），就会有两个 `Engine`，第二个必然锁失败。
+
+**修复**（1.7.3）：
+
+- `TryLock()` 抽出来，失败后每 2 s 重试；持锁方退出（或那个多余窗口被关掉）本实例自动接回，不需要重启管理器。
+- 失败不再泄漏 `FileStream` 句柄（旧代码把流留在打开状态）。
+- 持锁时把 pid 写进 `ncm_plugin_owner.txt`；失败方据此说明**是谁**在接管：官方助手（python）还是另一个管理器窗口。
+- 锁定时按播放不再静默：`Play()` / `StartPlay()` 会写一条说明持有者的提示。
+- 新增 `ncm_plugin.log`（256 KB 上限），`start` / `stop` / `lock acquired on retry` / 每 10 s 一行 `tick locked_out=.. pid=.. beat=.. handed=.. token=.. state=..`。这四个字段能一次分清「没拿锁 / 没看到游戏 / 没心跳 / 没握手」。
+- 诊断页补 `lock_holder`、`hub_handshaked`、`hub_note`、`game_pid/heartbeat/token`、`log=` 路径。
+
+**已证**：`.analysis/lockcheck` 打桩——对手占住 byte 0 时 `acquired=False`，放手后同一实例 `acquired=True`，`ncm_plugin_owner.txt` 写出。
+
+**仍未确定**：模组主体为什么不加载。02:31:46 交付成功仍无心跳，说明卡在模组自身的 `_cd1 → _65e → _6b4 → _b15` 链上（第九节末段），与锁无关。下一次复测先看 `ncm_plugin.log` 里 `handed=yes` 与 `beat=no` 是否同时出现：同时出现即主体没起来，属模组侧；若 `locked_out=yes` 反复出现，则是还有第二个实例在抢。
