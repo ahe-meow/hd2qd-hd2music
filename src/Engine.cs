@@ -108,6 +108,10 @@ public sealed class Engine : IDisposable
 
 	private DateTime _nextTrace;
 
+	private int _silentTicks;
+
+	private bool _silentWarned;
+
 	private static int _commandSerial;
 
 	private double _qrExpires;
@@ -1154,6 +1158,27 @@ public sealed class Engine : IDisposable
 				{
 					_nextTrace = DateTime.UtcNow.AddSeconds(10.0);
 					Trace();
+					// a delivered handshake that never produces a heartbeat means the mod took our
+					// bytes and then died in its own loader. Saying so once beats letting the
+					// player hunt a plugin bug that is not there; 1.2.6 loads in ~20 s.
+					DataHub hub = _dataHub;
+					if (hub != null && hub.Handshaked && Player.GameWatch.Pid > 0 && !Player.GameWatch.Beat)
+					{
+						_silentTicks++;
+						if (_silentTicks >= 5 && !_silentWarned)
+						{
+							_silentWarned = true;
+							lock (_lock)
+							{
+								_notice = "已向模组交付播放器资源，但游戏内主体没有加载起来（模组侧）";
+							}
+							Util.Log("body never reported back 50 s after delivery");
+						}
+					}
+					else if (Player.GameWatch.Beat)
+					{
+						_silentTicks = 0;
+					}
 				}
 			}
 			catch
