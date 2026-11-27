@@ -91,6 +91,10 @@ public sealed class StreamPlayer
 
 	public double Started;
 
+	/// <summary>When the last decoded block reached the audio queue. A live stream that stops
+	/// delivering mid-song is as broken as one that never started, and only this tells them apart.</summary>
+	public double LastPcmAt;
+
 	private readonly object _lock = new object();
 
 	private readonly object _lifecycle = new object();
@@ -360,6 +364,7 @@ public sealed class StreamPlayer
 			};
 			Outcome = null;
 			Started = (DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
+			LastPcmAt = Started;
 			Url = url;
 			Process = decoder;
 			PlaybackGame = game;
@@ -645,6 +650,7 @@ public sealed class StreamPlayer
 			}
 		}
 		_output.Enqueue(pcm);
+		LastPcmAt = Now();
 		int num = 8820;
 		for (int i = 0; i < pcm.Length; i += num)
 		{
@@ -763,6 +769,11 @@ public sealed class StreamPlayer
 				}
 				UpdatePositionLocked();
 				Status.State = (paused ? "paused" : "playing");
+				if (!paused)
+				{
+					// a long pause must not read as a stalled stream the moment it resumes
+					LastPcmAt = Now();
+				}
 				return true;
 			}
 			catch
@@ -827,7 +838,11 @@ public sealed class StreamPlayer
 			{
 				UpdatePositionLocked();
 				outcome = Outcome;
-				flag = AwaitingPlay && Now() - Started > 18.0;
+				double quiet = Now() - LastPcmAt;
+				// 18 s for a stream that never made a sound, 12 s for one that went quiet
+				// mid-song: a stalled CDN holds the socket open and never sets an outcome
+				flag = (AwaitingPlay && quiet > 18.0)
+					|| (!AwaitingPlay && Status.State != "paused" && quiet > 12.0);
 				pos = Status.Pos;
 			}
 			if (outcome.HasValue || flag)

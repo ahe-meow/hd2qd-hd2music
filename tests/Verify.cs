@@ -83,6 +83,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckQueuePersistence(asm);
             CheckUnplayableSkip(asm);
             CheckLyricProtocol(asm);
+            CheckStreamWatchdog(asm);
             CheckTab(asm, engineOf(asm));
             BuildWindows(asm);
 
@@ -554,9 +555,9 @@ namespace Hd2Qd.HD2Music.Verify
                 Fail("the unplayable line for a track with no artist is " + shortLine);
                 return;
             }
-            if ((int)retries.Invoke(null, new object[] { true }) != 2 || (int)retries.Invoke(null, new object[] { false }) != 1)
+            if ((int)retries.Invoke(null, new object[] { true }) != 3 || (int)retries.Invoke(null, new object[] { false }) != 1)
             {
-                Fail("a dead source must be retried once, a dropped connection twice");
+                Fail("a dead source must be retried once, a dropped connection three times");
                 return;
             }
             if (engine.GetMethod("AnnounceUnplayable", BindingFlags.Instance | BindingFlags.NonPublic) == null
@@ -566,6 +567,55 @@ namespace Hd2Qd.HD2Music.Verify
                 return;
             }
             Pass("an unplayable track announces itself in the lyric line, then skips");
+        }
+
+        /// <summary>A CDN that holds the socket open and stops sending raises no decoder outcome,
+        /// so the player has to notice silence itself — but never while the user paused it.</summary>
+        static void CheckStreamWatchdog(Assembly asm)
+        {
+            if (Quiet(asm, 13.0, "playing", false) == null)
+            {
+                Fail("13 s of silence mid-song is not treated as a broken stream");
+                return;
+            }
+            if (Quiet(asm, 3.0, "playing", false) != null)
+            {
+                Fail("a healthy stream is reported as broken");
+                return;
+            }
+            if (Quiet(asm, 13.0, "paused", false) != null)
+            {
+                Fail("a paused track is reported as a broken stream");
+                return;
+            }
+            if (Quiet(asm, 19.0, "loading", true) == null)
+            {
+                Fail("a stream that never started is no longer given up on");
+                return;
+            }
+            if (Quiet(asm, 10.0, "loading", true) != null)
+            {
+                Fail("a slow start is reported as broken too early");
+                return;
+            }
+            Pass("a stream that goes quiet mid-song is caught, a paused one is not");
+        }
+
+        static object Quiet(Assembly asm, double seconds, string state, bool awaiting)
+        {
+            const BindingFlags f = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            Type type = asm.GetType("Hd2Qd.HD2Music.StreamPlayer");
+            object player = Activator.CreateInstance(type,
+                Path.Combine(Path.GetTempPath(), "ffmpeg.exe"), Path.Combine(Path.GetTempPath(), "hb.txt"));
+            type.GetField("Active", f).SetValue(player, true);
+            type.GetField("AwaitingPlay", f).SetValue(player, awaiting);
+            object status = type.GetField("Status", f).GetValue(player);
+            status.GetType().GetField("State").SetValue(status, state);
+            status.GetType().GetField("Dur").SetValue(status, 200.0);
+            status.GetType().GetField("Pos").SetValue(status, 60.0);
+            double now = (DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
+            type.GetField("LastPcmAt", f).SetValue(player, now - seconds);
+            return type.GetMethod("Result", f).Invoke(player, null);
         }
 
         /// <summary>The game's settings write a lyric calibration both players read; the plugin

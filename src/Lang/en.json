@@ -343,5 +343,8 @@
   "歌曲「{0} - {1}」无法播放": "Cannot play \"{0} - {1}\"",
   "歌曲「{0}」无法播放": "Cannot play \"{0}\"",
   "歌单中没有可播放的歌曲": "Nothing in this playlist can be played",
-  "正在切到下一首…": "Skipping to the next track…"
+  "正在切到下一首…": "Skipping to the next track…",
+  "续播失败，点播放从原处重试": "Resume failed. Press play to continue from where it stopped",
+  "已取消续播，点播放可继续": "Resume cancelled. Press play to continue",
+  "正在从断开位置续播（{0}/{1}）…": "Resuming from where the stream broke ({0}/{1})…"
 }

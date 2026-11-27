@@ -159,6 +159,10 @@ public sealed class Engine : IDisposable
 
 	private DateTime _lyricOffsetAt;
 
+	/// <summary>The last thing that happened to a broken stream, as event:attempts:position —
+	/// the game's diagnostics page shows it, and the export writes the same line.</summary>
+	private string _recovery = "";
+
 	private readonly List<Playlist> _lists = new List<Playlist>();
 
 	private readonly List<Playlist> _recommended = new List<Playlist>();
@@ -947,9 +951,22 @@ public sealed class Engine : IDisposable
 		return "请求失败：" + error.Message;
 	}
 
-	private void LoopRun()
+	/// <summary>True while the plugin is doing something the game can see: a track is playing, or
+	/// a stream is being fetched or resumed.</summary>
+	private bool Busy()
 	{
-		while (!_stopped)
+		lock (_lock)
+		{
+			if (_state == "loading" || _state == "buffering")
+			{
+				return true;
+			}
+		}
+		return Player != null && Player.Active;
+	}
+
+	private void LoopRun()
+	{		while (!_stopped)
 		{
 			try
 			{
@@ -976,7 +993,9 @@ public sealed class Engine : IDisposable
 			catch
 			{
 			}
-			Thread.Sleep(200);
+			// twice the rate while a track is playing or loading: the game reads the lyric and
+			// the word marks from this file, and 200 ms of staleness is visible there
+			Thread.Sleep(Busy() ? 100 : 200);
 		}
 	}
 
@@ -2610,16 +2629,26 @@ public sealed class Engine : IDisposable
 			_notice = "";
 			_seeking = false;
 			_blockedCount = 0;
+			if (_resumeAttempts > 0)
+			{
+				_recovery = "resumed:" + _resumeAttempts + ":" + Moment(position);
+			}
 		}
 		LoadLyrics(track.Id);
 	}
 
 	/// <summary>How many times a broken stream is retried before its track is given up on: one for
-	/// a source that never made a sound (a dead URL, not a dropped one), two for a connection that
-	/// broke mid-song, where losing the position would cost the listener real listening.</summary>
+	/// a source that never made a sound (a dead URL, not a dropped one), three for a connection
+	/// that broke mid-song, where losing the position would cost the listener real listening.</summary>
 	private static int RetriesBeforeGivingUp(bool heard)
 	{
-		return heard ? 2 : 1;
+		return heard ? 3 : 1;
+	}
+
+	/// <summary>Seconds with three decimals, the form the diagnostics line uses.</summary>
+	private static string Moment(double value)
+	{
+		return Math.Max(0.0, value).ToString("0.###", CultureInfo.InvariantCulture);
 	}
 
 	/// <summary>The shared calibration file holds one offset per player. Only the netease line is
@@ -2858,6 +2887,8 @@ public sealed class Engine : IDisposable
 			SendCommand("toggle");
 			return;
 		}
+		bool cancel = false;
+		double position = 0.0;
 		lock (_lock)
 		{
 			if (_state == "playing" || _state == "paused")
@@ -2869,7 +2900,27 @@ public sealed class Engine : IDisposable
 				}
 				return;
 			}
+			if (_state == "buffering" && _resumePosition.HasValue)
+			{
+				// the user wants the retries to stop, not another attempt at them
+				cancel = true;
+				position = _resumePosition.Value;
+				_state = "idle";
+				_notice = "已取消续播，点播放可继续";
+				_recovery = "cancelled:" + _resumeAttempts + ":" + Moment(position);
+			}
+			else if (_resumePosition.HasValue)
+			{
+				// play again picks the track up where the stream broke
+				position = _resumePosition.Value;
+			}
 		}
+		if (cancel)
+		{
+			Player.Close();
+			return;
+		}
+		double from = position;
 		Post(delegate
 		{
 			int num;
@@ -2877,7 +2928,7 @@ public sealed class Engine : IDisposable
 			{
 				num = ((_index >= 0) ? _index : 0);
 			}
-			StartPlayAt((num >= 0) ? num : 0, 0.0);
+			StartPlayAt((num >= 0) ? num : 0, from);
 		});
 	}
 
@@ -3091,13 +3142,21 @@ public sealed class Engine : IDisposable
 			if (giveUp)
 			{
 				_state = "idle";
-				_notice = heard ? "音源连接中断，可以重试当前歌曲或手动切歌" : "";
+				_notice = heard ? "续播失败，点播放从原处重试" : "";
+				if (heard)
+				{
+					// keep the break point: pressing play picks the track up where it stopped
+					_resumePosition = endedPosition;
+				}
+				_recovery = "failed:" + resumeAttempts + ":" + Moment(endedPosition);
 			}
 			else
 			{
 				_resumeAttempts = resumeAttempts + 1;
 				_state = "buffering";
-				_notice = "音源连接中断，正在续播当前歌曲…";
+				int total = RetriesBeforeGivingUp(heard);
+				_notice = Words.F(I18n.CurrentLang, "正在从断开位置续播（{0}/{1}）…", resumeAttempts + 1, total);
+				_recovery = "retry:" + (resumeAttempts + 1) + ":" + Moment(endedPosition);
 			}
 		}
 		if (giveUp)
@@ -3330,6 +3389,7 @@ public sealed class Engine : IDisposable
 		bool accountLoading;
 		string blocked;
 		double offset;
+		string recovery;
 		Dictionary<string, string> dictionary;
 		Dictionary<string, string> dictionary2;
 		Dictionary<string, string> dictionary3;
@@ -3378,6 +3438,7 @@ public sealed class Engine : IDisposable
 			accountLoading = _accountLoading;
 			blocked = _blocked;
 			offset = _lyricOffset;
+			recovery = _recovery;
 			dictionary = new Dictionary<string, string>(_recommendTiles, StringComparer.Ordinal);
 			dictionary2 = new Dictionary<string, string>(_recommendKeys, StringComparer.Ordinal);
 			dictionary3 = new Dictionary<string, string>(_listTiles, StringComparer.Ordinal);
@@ -3486,6 +3547,7 @@ public sealed class Engine : IDisposable
 			"lyric_translation=" + Util.Clean(value6),
 			"lyric_at=" + ((index >= 0 && index < list7.Count) ? list7[index].At.ToString("0.000", CultureInfo.InvariantCulture) : ""),
 			"lyric_total=" + list7.Count.ToString(CultureInfo.InvariantCulture),
+			"diagnostic_recovery=" + Util.Clean(recovery),
 			"cover_key=" + text2,
 			"cover_texture_key=" + text3,
 			"mini_texture_key=" + text4
