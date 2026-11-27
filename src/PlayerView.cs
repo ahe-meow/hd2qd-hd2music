@@ -49,8 +49,8 @@ namespace Hd2Qd.HD2Music
         ListBox _lyricSheet;
         string _lyricSheetSignature = "";
         int _lyricShown = -1;
-        // blank rows above and below so the sung line can sit at the vertical centre
-        const int LyricPad = 12;
+        // a few blank rows at the end let the last lines centre too; none before the first
+        const int LyricPad = 6;
 
         double _lyricFontScale = LoadLyricFontScale();
         SpectrumBars _spectrum;
@@ -95,6 +95,12 @@ namespace Hd2Qd.HD2Music
         ListBox _detailTracks;
 
         TextBlock _detailTitle;
+
+        TextBlock _detailCount;
+
+        TextBox _detailSearch;
+
+        string _detailFilter = "";
 
         string _detailSignature = "";
 
@@ -483,7 +489,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.8.7 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.8.8 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -552,21 +558,8 @@ namespace Hd2Qd.HD2Music
             page.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
             page.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16.0) });
             page.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(344.0) });
-            page.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            page.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.0, GridUnitType.Star) });
-
-            // stations live where playback does, not in the library
-            StackPanel stations = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0.0, 0.0, 0.0, 10.0) };
-            _dailyButton = GhostButton("每日推荐", delegate { _engine.Daily(); });
-            stations.Children.Add(_dailyButton);
-            _fmButton = GhostButton("私人 FM", delegate { _engine.Fm(); });
-            _fmButton.Margin = new Thickness(10.0, 0.0, 0.0, 0.0);
-            stations.Children.Add(_fmButton);
-            page.Children.Add(stations);
-
             Border heroCard = Card(BuildHero());
             heroCard.Padding = new Thickness(18.0);
-            Grid.SetRow(heroCard, 1);
             page.Children.Add(heroCard);
 
             Grid rail = new Grid();
@@ -578,7 +571,6 @@ namespace Hd2Qd.HD2Music
             Grid.SetRow(system, 2);
             rail.Children.Add(system);
             Grid.SetColumn(rail, 2);
-            Grid.SetRow(rail, 1);
             page.Children.Add(rail);
             return page;
         }
@@ -831,6 +823,22 @@ namespace Hd2Qd.HD2Music
             _peekCount.Margin = new Thickness(8.0, 0.0, 0.0, 0.0);
             DockPanel.SetDock(_peekCount, Dock.Right);
             head.Children.Add(_peekCount);
+            _fmButton = GhostButton("私人 FM", delegate { _engine.Fm(); });
+            _fmButton.Height = 20.0;
+            _fmButton.MinHeight = 20.0;
+            _fmButton.FontSize = 9.0;
+            _fmButton.Padding = new Thickness(5.0, 0.0, 5.0, 0.0);
+            _fmButton.Margin = new Thickness(0.0, 0.0, 6.0, 0.0);
+            DockPanel.SetDock(_fmButton, Dock.Right);
+            head.Children.Add(_fmButton);
+            _dailyButton = GhostButton("每日推荐", delegate { _engine.Daily(); });
+            _dailyButton.Height = 20.0;
+            _dailyButton.MinHeight = 20.0;
+            _dailyButton.FontSize = 9.0;
+            _dailyButton.Padding = new Thickness(5.0, 0.0, 5.0, 0.0);
+            _dailyButton.Margin = new Thickness(0.0, 0.0, 6.0, 0.0);
+            DockPanel.SetDock(_dailyButton, Dock.Right);
+            head.Children.Add(_dailyButton);
             header.Child = head;
             inner.Children.Add(header);
 
@@ -1010,27 +1018,63 @@ namespace Hd2Qd.HD2Music
             _libraryDetail = new Grid { Visibility = Visibility.Collapsed, Background = Theme.Ground900 };
             _libraryDetail.RowDefinitions.Add(new RowDefinition { Height = new GridLength(42.0) });
             _libraryDetail.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.0, GridUnitType.Star) });
-            DockPanel detailHead = new DockPanel { LastChildFill = false, Margin = new Thickness(14.0, 0.0, 14.0, 0.0) };
+            Grid detailHead = new Grid { Margin = new Thickness(14.0, 0.0, 14.0, 0.0) };
+            detailHead.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            detailHead.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            detailHead.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
+            detailHead.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             Button back = GhostButton("← 返回歌单", delegate
             {
                 _libraryDetail.Visibility = Visibility.Collapsed;
                 _libraryBrowse.Visibility = Visibility.Visible;
             });
-            DockPanel.SetDock(back, Dock.Left);
             detailHead.Children.Add(back);
-            Button playAll = GhostButton("全部播放", delegate { _engine.PlayPreview(); });
-            DockPanel.SetDock(playAll, Dock.Right);
-            detailHead.Children.Add(playAll);
+
+            StackPanel titleBlock = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14.0, 0.0, 0.0, 0.0) };
+            TextBlock where = Mono("曲库", 9.0, Theme.Muted);
+            titleBlock.Children.Add(where);
+            _detailCount = Mono("0", 9.0, Theme.Muted);
+            _detailCount.Margin = new Thickness(10.0, 0.0, 0.0, 0.0);
+            titleBlock.Children.Add(_detailCount);
             _detailTitle = new TextBlock
             {
                 Text = "",
-                FontSize = 14.0,
+                FontSize = 12.0,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = Theme.Ink,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(14.0, 0.0, 14.0, 0.0)
+                Margin = new Thickness(10.0, 0.0, 0.0, 0.0)
             };
-            detailHead.Children.Add(_detailTitle);
+            titleBlock.Children.Add(_detailTitle);
+            Grid.SetColumn(titleBlock, 1);
+            detailHead.Children.Add(titleBlock);
+
+            StackPanel search = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            _detailSearch = new TextBox
+            {
+                Width = 150.0,
+                Height = 22.0,
+                FontSize = 10.0,
+                Padding = new Thickness(6.0, 2.0, 6.0, 2.0)
+            };
+            search.Children.Add(_detailSearch);
+            Button searchButton = GhostButton("搜索", delegate
+            {
+                _detailFilter = (_detailSearch.Text ?? "").Trim();
+                _detailSignature = "";
+                Refresh();
+            });
+            searchButton.Height = 22.0;
+            searchButton.MinHeight = 22.0;
+            searchButton.FontSize = 10.0;
+            searchButton.Margin = new Thickness(6.0, 0.0, 0.0, 0.0);
+            search.Children.Add(searchButton);
+            Grid.SetColumn(search, 2);
+            detailHead.Children.Add(search);
+
+            Button playAll = GhostButton("全部播放", delegate { _engine.PlayPreview(); });
+            Grid.SetColumn(playAll, 3);
+            detailHead.Children.Add(playAll);
             _libraryDetail.Children.Add(detailHead);
 
             _detailTracks = new ListBox
@@ -1513,10 +1557,6 @@ namespace Hd2Qd.HD2Music
             {
                 _lyricSheetSignature = signature;
                 _lyricSheet.Items.Clear();
-                for (int i = 0; i < LyricPad; i++)
-                {
-                    _lyricSheet.Items.Add(BlankLyricRow());
-                }
                 foreach (LyricLine line in state.LyricRows)
                 {
                     Grid row = new Grid();
@@ -1569,7 +1609,7 @@ namespace Hd2Qd.HD2Music
                 }
                 _lyricShown = -1;
             }
-            int current = state.LyricIndex + LyricPad;
+            int current = state.LyricIndex;
             if (current != _lyricShown)
             {
                 _lyricShown = current;
@@ -2062,6 +2102,9 @@ namespace Hd2Qd.HD2Music
         void RefreshCore()
         {
             UiState state = _engine.Snapshot();
+            // set before the lib/search refreshes: one bad row must not leave the transport
+            // showing yesterday's action
+            _play.Content = I18n.Text(state.State == "playing" ? "PAUSE" : (state.State == "paused" ? "RESUME" : "PLAY"));
             string stateName = (state.State ?? "idle").ToUpperInvariant();
             _stateText.Text = stateName;
             _stateText.Foreground = state.State == "playing" ? Theme.Yellow : (state.State == "paused" || state.State == "buffering" ? Theme.Blue : Theme.Muted);
@@ -2089,7 +2132,6 @@ namespace Hd2Qd.HD2Music
             }
             _time.Text = Util.FormatTime(_progress.Value);
             _duration.Text = " / " + Util.FormatTime(state.Duration);
-            _play.Content = state.State == "playing" ? "PAUSE" : (state.State == "paused" ? "RESUME" : "PLAY");
             _suppressVolume = true;
             _volume.Value = state.Volume;
             _suppressVolume = false;
@@ -2259,19 +2301,27 @@ namespace Hd2Qd.HD2Music
 
         void RefreshDetail(UiState state)
         {
-            string signature = state.PreviewListId + "|" + string.Join("|", state.PlaylistTracks.Select(t => t.Id));
+            _detailCount.Text = state.PlaylistTracks.Count.ToString();
+            List<Track> shown = state.PlaylistTracks;
+            if (!string.IsNullOrEmpty(_detailFilter))
+            {
+                string needle = _detailFilter.ToLowerInvariant();
+                shown = shown.Where(t => (t.Title ?? "").ToLowerInvariant().Contains(needle)
+                    || (t.Artist ?? "").ToLowerInvariant().Contains(needle)).ToList();
+            }
+            string signature = state.PreviewListId + "|" + _detailFilter + "|" + string.Join("|", shown.Select(t => t.Id));
             if (signature == _detailSignature)
             {
                 return;
             }
             _detailSignature = signature;
             _detailTracks.Items.Clear();
-            foreach (Track track in state.PlaylistTracks)
+            foreach (Track track in shown)
             {
                 Grid row = new Grid();
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(92.0) });
                 TextBlock number = Mono((_detailTracks.Items.Count + 1).ToString("00"), 9.0, Theme.Muted);
                 row.Children.Add(number);
 
@@ -2297,9 +2347,11 @@ namespace Hd2Qd.HD2Music
                 Grid.SetColumn(words, 1);
                 row.Children.Add(words);
 
-                Button add = GhostButton("＋ 加入", delegate { _engine.AddTrackToQueue(track); });
+                Button add = GhostButton("下一首播放", delegate { _engine.PlayNextTrack(track); });
                 add.FontSize = 10.0;
                 add.Padding = new Thickness(8.0, 0.0, 8.0, 0.0);
+                add.HorizontalAlignment = HorizontalAlignment.Right;
+                add.Margin = new Thickness(0.0, 0.0, 8.0, 0.0);
                 Grid.SetColumn(add, 2);
                 row.Children.Add(add);
                 _detailTracks.Items.Add(new ListBoxItem { Content = row });

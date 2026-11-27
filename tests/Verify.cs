@@ -355,7 +355,7 @@ namespace Hd2Qd.HD2Music.Verify
                 return;
             }
             Type engine = asm.GetType("Hd2Qd.HD2Music.Engine", true);
-            foreach (string method in new[] { "PreviewPlaylist", "PlayPreview", "AddTrackToQueue" })
+            foreach (string method in new[] { "PreviewPlaylist", "PlayPreview", "AddTrackToQueue", "PlayNextTrack" })
             {
                 if (engine.GetMethod(method, BindingFlags.Instance | BindingFlags.Public) == null)
                 {
@@ -369,7 +369,13 @@ namespace Hd2Qd.HD2Music.Verify
                 Fail("UiState.PlaylistTracks is missing");
                 return;
             }
-            Pass("game close cannot stop playback; playlists browse before they replace the queue");
+            Type saved = asm.GetType("Hd2Qd.HD2Music.QueueSnapshot", true);
+            if (saved.GetField("Pos") == null || saved.GetField("Volume") == null)
+            {
+                Fail("QueueSnapshot does not keep position and volume");
+                return;
+            }
+            Pass("game close cannot stop playback; playlists browse before replacing the queue; position and volume persist");
         }
 
         static void CheckDataHub(Assembly asm)

@@ -214,6 +214,8 @@ public sealed class Engine : IDisposable
 	// time and the queue has to be refilled as it runs out. This guards against double fetches.
 	private volatile bool _fmRefilling;
 
+	private DateTime _nextQueueSave;
+
 	private readonly List<Track> _searchResults = new List<Track>();
 
 	private readonly List<Track> _podcastTracks = new List<Track>();
@@ -1196,6 +1198,13 @@ public sealed class Engine : IDisposable
 			try
 			{
 				PersistQueueIfChanged();
+				// QueueKey changes only on a track/index change, so save the position too
+				// while a song is playing, otherwise a restart would resume from zero
+				if (_state == "playing" && DateTime.UtcNow >= _nextQueueSave)
+				{
+					_nextQueueSave = DateTime.UtcNow.AddSeconds(10.0);
+					SaveQueue();
+				}
 			}
 			catch
 			{
@@ -1256,6 +1265,21 @@ public sealed class Engine : IDisposable
 		}
 		MixTick();
 		PollLogin();
+		// radio/get returns only a handful of tracks, so refill while the last one is still
+		// playing; waiting for the queue to run dry made FM look like a three-song playlist
+		if (_currentListId == "fm" && !_fmRefilling)
+		{
+			int remaining;
+			lock (_lock)
+			{
+				remaining = _queueTracks.Count - 1 - _index;
+			}
+			if (remaining <= 1)
+			{
+				_fmRefilling = true;
+				Post(delegate { RefillFm(false, false); });
+			}
+		}
 		AdvanceBlocked();
 		CheckAudition();
 		if (Player != null)
@@ -1344,7 +1368,7 @@ public sealed class Engine : IDisposable
 		try
 		{
 			var saved = Util.Parse<QueueSnapshot>(File.ReadAllText(QueueFile, Encoding.UTF8));
-			if (saved == null || saved.Version != 1 || saved.Tracks == null || saved.Tracks.Count == 0)
+			if (saved == null || (saved.Version != 1 && saved.Version != 2) || saved.Tracks == null || saved.Tracks.Count == 0)
 			{
 				return;
 			}
@@ -1366,6 +1390,16 @@ public sealed class Engine : IDisposable
 				_trackFirst = Math.Max(1, saved.TrackFirst);
 				_state = "idle";
 				_notice = "已恢复上次的播放列表";
+			}
+			if (Player != null && saved.Volume >= 0 && saved.Volume <= 100)
+			{
+				Player.SetVolume(saved.Volume);
+			}
+			double resume = saved.Pos;
+			int restored = _index;
+			if (restored >= 0 && resume > 0.0)
+			{
+				Post(delegate { StartPlayAt(restored, resume, keepResumeAttempts: true); });
 			}
 			_queueSignature = QueueKey();
 		}
@@ -1422,6 +1456,8 @@ public sealed class Engine : IDisposable
 				ListName = _currentList,
 				Index = _index,
 				TrackFirst = _trackFirst,
+				Pos = ((Player != null) ? Math.Max(0.0, Player.Status.Pos) : 0.0),
+				Volume = ((Player != null) ? Player.Volume : 65),
 				Tracks = new List<Track>(_queueTracks)
 			};
 		}
@@ -2064,6 +2100,23 @@ public sealed class Engine : IDisposable
 			_queueTracks.Add(track);
 			_queueRevision++;
 			_notice = "已加入播放列表";
+		}
+	}
+
+	/// <summary>Insert a browsed track right after the song playing and make it the next one.</summary>
+	public void PlayNextTrack(Track track)
+	{
+		if (track == null)
+		{
+			return;
+		}
+		lock (_lock)
+		{
+			int at = Math.Min(_queueTracks.Count, Math.Max(0, _index + 1));
+			_queueTracks.Insert(at, track);
+			_priorityNext = at;
+			_queueRevision++;
+			_notice = "已设为下一首";
 		}
 	}
 
@@ -3022,9 +3075,10 @@ public sealed class Engine : IDisposable
 	/// and when the queue runs out it keeps the last twenty and appends the next one. Copy
 	/// that here instead of replacing the queue with a single song and stopping.
 	/// </summary>
-	void RefillFm(bool keepResumeAttempts)
+	void RefillFm(bool keepResumeAttempts, bool playImmediately = true)
 	{
 		_fmRefilling = true;
+		Util.Log("fm refill requested keep=" + keepResumeAttempts + " play=" + playImmediately);
 		lock (_lock)
 		{
 			_state = "loading";
@@ -3062,16 +3116,23 @@ public sealed class Engine : IDisposable
 			}
 			_fmRefilling = false;
 		}
+		Util.Log("fm refill got " + (first < 0 ? 0 : fresh.Count) + " tracks, play=" + playImmediately);
 		if (first < 0)
 		{
-			lock (_lock)
+			if (playImmediately)
 			{
-				_state = "finished";
-				_notice = "暂时无法获取歌曲，请稍后重试";
+				lock (_lock)
+				{
+					_state = "finished";
+					_notice = "暂时无法获取歌曲，请稍后重试";
+				}
 			}
 			return;
 		}
-		StartPlayAt(first, 0.0, keepResumeAttempts);
+		if (playImmediately)
+		{
+			StartPlayAt(first, 0.0, keepResumeAttempts);
+		}
 	}
 
 	private void StartPlayAt(int index, double position, bool keepResumeAttempts = false)
@@ -3834,6 +3895,7 @@ public sealed class Engine : IDisposable
 		if (Player != null)
 		{
 			Player.SetVolume(volume);
+			SaveQueue();
 		}
 	}
 
