@@ -489,7 +489,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.9.0 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.9.1 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -2131,7 +2131,7 @@ namespace Hd2Qd.HD2Music
             UiState state = _engine.Snapshot();
             // set before the lib/search refreshes: one bad row must not leave the transport
             // showing yesterday's action
-            _play.Content = I18n.Text(state.State == "playing" ? "PAUSE" : (state.State == "paused" ? "RESUME" : "PLAY"));
+            _play.Content = I18n.Text(state.State == "playing" ? "PAUSE" : "PLAY");
             string stateName = (state.State ?? "idle").ToUpperInvariant();
             _stateText.Text = stateName;
             _stateText.Foreground = state.State == "playing" ? Theme.Yellow : (state.State == "paused" || state.State == "buffering" ? Theme.Blue : Theme.Muted);

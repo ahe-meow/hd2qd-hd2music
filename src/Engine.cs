@@ -3657,10 +3657,10 @@ public sealed class Engine : IDisposable
 			if (_state == "playing" || _state == "paused")
 			{
 				bool flag = _state == "playing";
-				if (Player.Pause(flag))
-				{
-					_state = (flag ? "paused" : "playing");
-				}
+				Player.Pause(flag);
+				// the transport always follows the click. A player with no output yet cannot
+				// pause audio, but it must not leave the button saying 暂停 while paused.
+				_state = (flag ? "paused" : "playing");
 				return;
 			}
 			if (_state == "buffering" && _resumePosition.HasValue)

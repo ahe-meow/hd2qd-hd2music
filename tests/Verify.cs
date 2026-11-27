@@ -75,6 +75,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckText(asm, plugin);
             CheckQr(asm);
             CheckPlaybackWithoutGame(asm);
+            CheckTransportToggle(asm);
             CheckFmStation(asm);
             CheckPlaylistBrowse(asm);
             CheckDataHub(asm);
@@ -334,6 +335,31 @@ namespace Hd2Qd.HD2Music.Verify
         /// radio/get hands back one track per call. Without a refill path private FM is a
         /// one-song playlist and stops; the official helper keeps appending as it runs out.
         /// </summary>
+        /// <summary>
+        /// A player with no mixer yet used to reject Pause, so the engine kept "playing"
+        /// and the button stayed on 暂停 after a click. The transport state must follow the
+        /// click whether or not there is audio output to suspend.
+        /// </summary>
+        static void CheckTransportToggle(Assembly asm)
+        {
+            Type type = asm.GetType("Hd2Qd.HD2Music.StreamPlayer", true);
+            object player = Activator.CreateInstance(type,
+                Path.Combine(Path.GetTempPath(), "ffmpeg.exe"),
+                Path.Combine(Path.GetTempPath(), "hd2qd-toggle-heartbeat.txt"));
+            type.GetField("Active").SetValue(player, true);
+            MethodInfo pause = type.GetMethod("Pause");
+            object status = type.GetField("Status").GetValue(player);
+            FieldInfo state = status.GetType().GetField("State");
+            bool paused = (bool)pause.Invoke(player, new object[] { true });
+            bool resumed = (bool)pause.Invoke(player, new object[] { false });
+            if (!paused || !resumed || (string)state.GetValue(status) != "playing")
+            {
+                Fail("pause/resume must flip the transport state even with no output yet");
+                return;
+            }
+            Pass("transport toggles back from 暂停 to 播放 even before the decoder is ready");
+        }
+
         static void CheckFmStation(Assembly asm)
         {
             Type engine = asm.GetType("Hd2Qd.HD2Music.Engine", true);

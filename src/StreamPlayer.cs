@@ -754,19 +754,24 @@ public sealed class StreamPlayer
 	{
 		lock (_lock)
 		{
-			if (!Active || _output == null || Outcome.HasValue)
+			if (!Active || Outcome.HasValue)
 			{
 				return false;
 			}
 			try
 			{
-				if (paused)
+				// no output yet (loading, or a resumed session): there is no mixer to pause,
+				// but the transport state must still follow the click or the button lies
+				if (_output != null)
 				{
-					_output.Pause();
-				}
-				else
-				{
-					_output.Resume();
+					if (paused)
+					{
+						_output.Pause();
+					}
+					else
+					{
+						_output.Resume();
+					}
 				}
 				UpdatePositionLocked();
 				Status.State = (paused ? "paused" : "playing");
