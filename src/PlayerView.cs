@@ -38,12 +38,7 @@ namespace Hd2Qd.HD2Music
         TextBlock _title;
         TextBlock _artist;
         TextBlock _meta;
-        TextBlock _previous;
-        TextBlock _lyric;
-
-        TextBlock _lyricPrefixLine;
-        TextBlock _translation;
-        TextBlock _next;
+        TextBlock _album;
         TextBlock _notice;
         TextBlock _time;
         TextBlock _duration;
@@ -473,7 +468,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.8.0 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.8.1 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -563,15 +558,18 @@ namespace Hd2Qd.HD2Music
         FrameworkElement BuildHero()
         {
             Grid hero = new Grid();
-            hero.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             hero.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.0, GridUnitType.Star) });
             hero.RowDefinitions.Add(new RowDefinition { Height = new GridLength(34.0) });
             hero.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            Grid top = new Grid();
-            top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(302.0) });
-            top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(22.0) });
-            top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
+            // two columns: cover and track facts on the left, the whole lyric sheet on the right
+            Grid main = new Grid();
+            main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(326.0) });
+            main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
+
+            Grid left = new Grid();
+            left.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            left.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.0, GridUnitType.Star) });
 
             Grid coverHost = new Grid { Background = Theme.Ground900, ClipToBounds = true };
             coverHost.Children.Add(new TextBlock
@@ -584,16 +582,22 @@ namespace Hd2Qd.HD2Music
             });
             _cover = new Image { Stretch = Stretch.UniformToFill };
             coverHost.Children.Add(_cover);
-            top.Children.Add(new Border
+            Border coverCard = new Border
             {
                 Width = 302.0,
                 Height = 302.0,
                 BorderBrush = Theme.Grid,
                 BorderThickness = new Thickness(1.0),
-                Child = coverHost
-            });
+                Child = coverHost,
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            left.Children.Add(coverCard);
 
-            StackPanel info = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
+            StackPanel info = new StackPanel
+            {
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0.0, 16.0, 8.0, 0.0)
+            };
             info.Children.Add(SectionLabel("NOW PLAYING"));
             _title = new TextBlock
             {
@@ -614,6 +618,15 @@ namespace Hd2Qd.HD2Music
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
             info.Children.Add(_artist);
+            _album = new TextBlock
+            {
+                Text = "",
+                FontSize = 12.0,
+                Foreground = Theme.Muted,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(0.0, 4.0, 0.0, 0.0)
+            };
+            info.Children.Add(_album);
             _meta = new TextBlock
             {
                 Text = "",
@@ -639,79 +652,14 @@ namespace Hd2Qd.HD2Music
                 MaxHeight = 52.0
             };
             info.Children.Add(_notice);
-            Grid.SetColumn(info, 2);
-            top.Children.Add(info);
-            hero.Children.Add(top);
+            Grid.SetRow(info, 1);
+            left.Children.Add(info);
+            main.Children.Add(left);
 
-            StackPanel lyrics = new StackPanel();
-            lyrics.Children.Add(SectionLabel("LYRICS"));
-            _previous = new TextBlock
-            {
-                Text = "",
-                FontSize = 11.0,
-                Foreground = Theme.Muted,
-                Opacity = 0.55,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                Margin = new Thickness(0.0, 8.0, 0.0, 0.0)
-            };
-            lyrics.Children.Add(_previous);
-            _lyric = new TextBlock
-            {
-                Text = "未在播放",
-                FontSize = 13.0,
-                Foreground = Theme.Muted,
-                TextWrapping = TextWrapping.Wrap,
-                MaxHeight = 96.0,
-                Margin = new Thickness(0.0, 6.0, 0.0, 4.0)
-            };
-            lyrics.Children.Add(_lyric);
-            _lyricPrefixLine = new TextBlock
-            {
-                Text = "",
-                FontSize = 12.0,
-                FontFamily = Theme.Font("Mono"),
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0.0, 0.0, 0.0, 4.0)
-            };
-            lyrics.Children.Add(_lyricPrefixLine);
-            _translation = new TextBlock
-            {
-                Text = "",
-                FontSize = 13.0,
-                Foreground = Theme.Muted,
-                TextWrapping = TextWrapping.Wrap,
-                MaxHeight = 44.0
-            };
-            lyrics.Children.Add(_translation);
-            _next = new TextBlock
-            {
-                Text = "",
-                FontSize = 11.5,
-                Foreground = Theme.Blue,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                Margin = new Thickness(0.0, 8.0, 0.0, 0.0)
-            };
-            lyrics.Children.Add(_next);
-            Border lyricBox = new Border
-            {
-                Background = Theme.Ground900,
-                BorderBrush = Theme.Grid,
-                BorderThickness = new Thickness(1.0),
-                Padding = new Thickness(18.0, 14.0, 18.0, 14.0),
-                Margin = new Thickness(0.0, 16.0, 0.0, 8.0),
-                VerticalAlignment = VerticalAlignment.Center,
-                Child = lyrics
-            };
-            Grid lyricRow = new Grid();
-            lyricRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
-            lyricRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16.0) });
-            lyricRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300.0) });
-            lyricRow.Children.Add(lyricBox);
             FrameworkElement sheet = BuildLyricSheet();
-            Grid.SetColumn(sheet, 2);
-            lyricRow.Children.Add(sheet);
-            Grid.SetRow(lyricRow, 1);
-            hero.Children.Add(lyricRow);
+            Grid.SetColumn(sheet, 1);
+            main.Children.Add(sheet);
+            hero.Children.Add(main);
 
             Grid spectrumRow = new Grid { Margin = new Thickness(0.0, 6.0, 0.0, 0.0) };
             spectrumRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80.0) });
@@ -727,7 +675,7 @@ namespace Hd2Qd.HD2Music
             _spectrum = new SpectrumBars { Height = 20.0, MaxWidth = 520.0, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(_spectrum, 1);
             spectrumRow.Children.Add(_spectrum);
-            Grid.SetRow(spectrumRow, 2);
+            Grid.SetRow(spectrumRow, 1);
             hero.Children.Add(spectrumRow);
 
             StackPanel bottom = new StackPanel { Margin = new Thickness(0.0, 4.0, 0.0, 0.0) };
@@ -809,7 +757,7 @@ namespace Hd2Qd.HD2Music
             Grid.SetColumn(volume, 2);
             transport.Children.Add(volume);
             bottom.Children.Add(transport);
-            Grid.SetRow(bottom, 3);
+            Grid.SetRow(bottom, 2);
             hero.Children.Add(bottom);
             return hero;
         }
@@ -1430,12 +1378,15 @@ namespace Hd2Qd.HD2Music
         FrameworkElement BuildLyricSheet()
         {
             Border card = Card(null);
-            card.Margin = new Thickness(0.0, 16.0, 0.0, 8.0);
+            // column gap on the left, breathing room on all four sides of the sheet
+            card.Margin = new Thickness(16.0, 0.0, 0.0, 0.0);
+            card.Padding = new Thickness(12.0, 10.0, 12.0, 10.0);
+            card.VerticalAlignment = VerticalAlignment.Stretch;
             Grid inner = new Grid();
             inner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(30.0) });
             inner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.0, GridUnitType.Star) });
 
-            DockPanel head = new DockPanel { LastChildFill = false, Margin = new Thickness(10.0, 0.0, 10.0, 0.0) };
+            DockPanel head = new DockPanel { LastChildFill = false, Margin = new Thickness(0.0) };
             head.Children.Add(new TextBlock
             {
                 Text = "LYRIC SHEET",
@@ -1459,7 +1410,7 @@ namespace Hd2Qd.HD2Music
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0.0),
                 ItemContainerStyle = Theme.S("Row"),
-                Margin = new Thickness(2.0, 0.0, 2.0, 4.0)
+                Margin = new Thickness(0.0, 6.0, 0.0, 0.0)
             };
             ScrollViewer.SetHorizontalScrollBarVisibility(_lyricSheet, ScrollBarVisibility.Disabled);
             _lyricSheet.MouseLeftButtonUp += delegate
@@ -1958,36 +1909,12 @@ namespace Hd2Qd.HD2Music
 
             _title.Text = string.IsNullOrEmpty(state.Title) ? I18n.Text("未选歌曲") : state.Title;
             _artist.Text = state.Artist ?? "";
+            _album.Text = string.IsNullOrEmpty(state.Album) ? "" : state.Album;
             _meta.Text = (string.IsNullOrEmpty(state.PlaylistName) ? "—" : state.PlaylistName)
                 + "   ·   " + Math.Max(0, state.Index + 1) + "/" + state.Count;
 
-            bool hasLyric = !string.IsNullOrEmpty(state.Lyric);
-            if (!hasLyric)
-            {
-                _lyric.Text = I18n.Text(state.State == "playing" || state.State == "paused" ? "暂无歌词" : "未在播放");
-                _lyric.FontSize = 13.0;
-                _lyric.Foreground = Theme.Muted;
-            }
-            else
-            {
-                _lyric.Text = state.Lyric;
-                _lyric.FontSize = 23.0;
-                _lyric.Foreground = Theme.Ink;
-            }
-            _previous.Text = hasLyric ? state.PreviousLyric : "";
-            string prefix = hasLyric ? (state.LyricPrefix ?? "") : "";
-            string whole = hasLyric ? (state.Lyric ?? "") : "";
-            _lyricPrefixLine.Inlines.Clear();
-            if (prefix.Length > 0)
-            {
-                _lyricPrefixLine.Inlines.Add(new Run(prefix) { Foreground = Theme.Yellow });
-            }
-            if (whole.Length > prefix.Length)
-            {
-                _lyricPrefixLine.Inlines.Add(new Run(whole.Substring(prefix.Length)) { Foreground = Theme.Muted });
-            }
-            _translation.Text = hasLyric ? state.Translation : "";
-            _next.Text = hasLyric && !string.IsNullOrEmpty(state.NextLyric) ? I18n.Text("NEXT   ") + state.NextLyric : "";
+            // the console no longer has a separate current-line block: the lyric sheet is
+            // clickable and highlights the line, so one lyric surface is enough
             _notice.Text = I18n.Text(state.Notice ?? "");
 
             SetImage(state.CoverUrl);

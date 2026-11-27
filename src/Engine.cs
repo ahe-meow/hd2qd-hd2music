@@ -1565,6 +1565,7 @@ public sealed class Engine : IDisposable
 				State = _state,
 				Title = ((track != null) ? track.Title : ""),
 				Artist = ((track != null) ? track.Artist : ""),
+				Album = ((track != null) ? track.Album : ""),
 				CoverUrl = ((track != null) ? track.CoverUrl : ""),
 				PlaylistName = _currentList,
 				Quality = _quality,

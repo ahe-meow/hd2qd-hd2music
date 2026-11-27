@@ -562,12 +562,22 @@ namespace Hd2Qd.HD2Music.Verify
                 return;
             }
             Type player = asm.GetType("Hd2Qd.HD2Music.PlayerView");
-            if (player.GetField("_lyricPrefixLine", BindingFlags.Instance | BindingFlags.NonPublic) == null)
+            // the old current-line block is gone: the sheet is the only lyric surface now
+            foreach (string field in new[] { "_lyricSheet", "_album" })
             {
-                Fail("PlayerView._lyricPrefixLine is missing");
+                if (player.GetField(field, BindingFlags.Instance | BindingFlags.NonPublic) == null)
+                {
+                    Fail("PlayerView." + field + " is missing");
+                    return;
+                }
+            }
+            Type state = asm.GetType("Hd2Qd.HD2Music.UiState");
+            if (state?.GetField("Album") == null)
+            {
+                Fail("UiState.Album is missing");
                 return;
             }
-            Pass("verification link and lyric prefix preview present");
+            Pass("verification link, lyric sheet and album line present");
         }
 
         static void CheckI18n(Assembly asm)
@@ -582,7 +592,15 @@ namespace Hd2Qd.HD2Music.Verify
             Type player = asm.GetType("Hd2Qd.HD2Music.PlayerView");
             if (player.GetField("_languageMode", BindingFlags.Instance | BindingFlags.NonPublic) == null)
             { Fail("PlayerView._languageMode is missing"); return; }
-            Pass("bilingual UI infrastructure present");
+            Type words = asm.GetType("Hd2Qd.HD2Music.Words");
+            MethodInfo get = words?.GetMethod("Get", BindingFlags.Public | BindingFlags.Static);
+            if (get == null)
+            { Fail("Words.Get is missing"); return; }
+            string zh = (string)get.Invoke(null, new object[] { "zh-CN", "LYRIC SHEET" });
+            string back = (string)get.Invoke(null, new object[] { "en", "歌词表" });
+            if (zh == "LYRIC SHEET" || back != "LYRIC SHEET")
+            { Fail("LYRIC SHEET is not wired for both languages"); return; }
+            Pass("bilingual UI infrastructure present, including the lyric sheet heading");
         }
 
         static void CheckQueuePersistence(Assembly asm)

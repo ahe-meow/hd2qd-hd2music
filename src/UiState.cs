@@ -16,6 +16,8 @@ public sealed class UiState
 
 	public string Artist = "";
 
+	public string Album = "";
+
 	public string CoverUrl = "";
 
 	public string PlaylistName = "";
