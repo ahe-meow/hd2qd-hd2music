@@ -199,6 +199,13 @@ public sealed class Engine : IDisposable
 
 	private readonly List<Playlist> _lists = new List<Playlist>();
 
+	// browsing a playlist shows its tracks here without replacing what is playing
+	private readonly List<Track> _previewTracks = new List<Track>();
+
+	private string _previewId = "";
+
+	private string _previewName = "";
+
 	private readonly List<Playlist> _recommended = new List<Playlist>();
 
 	private readonly List<Track> _queueTracks = new List<Track>();
@@ -1510,6 +1517,9 @@ public sealed class Engine : IDisposable
 			{
 				Account = _account,
 				Notice = _notice,
+				PreviewListId = _previewId,
+				PreviewListName = _previewName,
+				PlaylistTracks = new List<Track>(_previewTracks),
 				GameRunning = Player != null && Player.GameWatch != null && Player.GameWatch.Pid > 0,
 				State = _state,
 				Title = ((track != null) ? track.Title : ""),
@@ -1976,6 +1986,85 @@ public sealed class Engine : IDisposable
 	public void OpenPlaylist(Playlist playlist)
 	{
 		LoadPlaylist(playlist, play: true);
+	}
+
+	/// <summary>Fetch a playlist for browsing only. The live queue and the song are untouched.</summary>
+	public void PreviewPlaylist(Playlist playlist)
+	{
+		if (playlist == null)
+		{
+			return;
+		}
+		lock (_lock)
+		{
+			_previewId = playlist.Id;
+			_previewName = playlist.Name;
+			_previewTracks.Clear();
+			_notice = "正在读取歌单…";
+		}
+		string id = playlist.Id;
+		Post(delegate
+		{
+			try
+			{
+				List<Track> list = Api.Tracks(id);
+				lock (_lock)
+				{
+					if (_previewId != id)
+					{
+						return;
+					}
+					_previewTracks.Clear();
+					_previewTracks.AddRange(list);
+					_notice = list.Count == 0 ? "歌单中没有歌曲" : "";
+				}
+			}
+			catch (Exception ex)
+			{
+				lock (_lock)
+				{
+					_notice = "歌单读取失败：" + ex.Message;
+				}
+			}
+		});
+	}
+
+	/// <summary>Replace the playlist with the one being browsed and start from its first song.</summary>
+	public void PlayPreview()
+	{
+		List<Track> copy;
+		lock (_lock)
+		{
+			if (_previewTracks.Count == 0)
+			{
+				return;
+			}
+			copy = new List<Track>(_previewTracks);
+			_queueTracks.Clear();
+			_queueTracks.AddRange(copy);
+			_queueRevision++;
+			_currentList = _previewName;
+			_currentListId = _previewId;
+			_index = -1;
+			_trackFirst = 1;
+			_state = "idle";
+			_notice = "";
+		}
+		StartPlay(0);
+	}
+
+	public void AddTrackToQueue(Track track)
+	{
+		if (track == null)
+		{
+			return;
+		}
+		lock (_lock)
+		{
+			_queueTracks.Add(track);
+			_queueRevision++;
+			_notice = "已加入播放列表";
+		}
 	}
 
 	/// <summary>Reads a playlist into the queue without starting it, so the player can choose a

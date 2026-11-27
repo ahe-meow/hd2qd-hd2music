@@ -112,6 +112,13 @@ public sealed class UiState
 
 	public List<Track> Queue = new List<Track>();
 
+	/// <summary>Tracks of the playlist currently being browsed; browsing never touches Queue.</summary>
+	public List<Track> PlaylistTracks = new List<Track>();
+
+	public string PreviewListId = "";
+
+	public string PreviewListName = "";
+
 	public List<Track> SearchResults = new List<Track>();
 
 	public List<RadioChannel> Radios = new List<RadioChannel>();

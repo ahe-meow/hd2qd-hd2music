@@ -76,6 +76,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckQr(asm);
             CheckPlaybackWithoutGame(asm);
             CheckFmStation(asm);
+            CheckPlaylistBrowse(asm);
             CheckDataHub(asm);
             CheckFfmpeg(asm);
             CheckBrowseApi(asm);
@@ -343,6 +344,32 @@ namespace Hd2Qd.HD2Music.Verify
                 return;
             }
             Pass("private FM refills its queue instead of stopping after one track");
+        }
+
+        static void CheckPlaylistBrowse(Assembly asm)
+        {
+            Type player = asm.GetType("Hd2Qd.HD2Music.StreamPlayer", true);
+            if (player.GetMethod("StopOnGameChange", BindingFlags.Instance | BindingFlags.Public) != null)
+            {
+                Fail("the player still exposes a game-close stop hook");
+                return;
+            }
+            Type engine = asm.GetType("Hd2Qd.HD2Music.Engine", true);
+            foreach (string method in new[] { "PreviewPlaylist", "PlayPreview", "AddTrackToQueue" })
+            {
+                if (engine.GetMethod(method, BindingFlags.Instance | BindingFlags.Public) == null)
+                {
+                    Fail("Engine." + method + " is missing");
+                    return;
+                }
+            }
+            Type state = asm.GetType("Hd2Qd.HD2Music.UiState", true);
+            if (state.GetField("PlaylistTracks") == null)
+            {
+                Fail("UiState.PlaylistTracks is missing");
+                return;
+            }
+            Pass("game close cannot stop playback; playlists browse before they replace the queue");
         }
 
         static void CheckDataHub(Assembly asm)

@@ -47,8 +47,6 @@ namespace Hd2Qd.HD2Music
         Slider _volume;
         Button _play;
         ListBox _lyricSheet;
-        Button _auditionButton;
-        bool _auditioning;
         string _lyricSheetSignature = "";
         int _lyricShown = -1;
         // blank rows above and below so the sung line can sit at the vertical centre
@@ -89,6 +87,16 @@ namespace Hd2Qd.HD2Music
         Button _fmButton;
 
         Button _myPlaylistsButton;
+
+        UIElement _libraryBrowse;
+
+        Grid _libraryDetail;
+
+        ListBox _detailTracks;
+
+        TextBlock _detailTitle;
+
+        string _detailSignature = "";
 
         Button _stopButton;
 
@@ -475,7 +483,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.8.6 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.8.7 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -997,6 +1005,48 @@ namespace Hd2Qd.HD2Music
                 IsHitTestVisible = false
             };
             body.Children.Add(_libraryEmpty);
+
+            // browsing a playlist shows its songs here; neither the queue nor the song changes
+            _libraryDetail = new Grid { Visibility = Visibility.Collapsed, Background = Theme.Ground900 };
+            _libraryDetail.RowDefinitions.Add(new RowDefinition { Height = new GridLength(42.0) });
+            _libraryDetail.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.0, GridUnitType.Star) });
+            DockPanel detailHead = new DockPanel { LastChildFill = false, Margin = new Thickness(14.0, 0.0, 14.0, 0.0) };
+            Button back = GhostButton("← 返回歌单", delegate
+            {
+                _libraryDetail.Visibility = Visibility.Collapsed;
+                _libraryBrowse.Visibility = Visibility.Visible;
+            });
+            DockPanel.SetDock(back, Dock.Left);
+            detailHead.Children.Add(back);
+            Button playAll = GhostButton("全部播放", delegate { _engine.PlayPreview(); });
+            DockPanel.SetDock(playAll, Dock.Right);
+            detailHead.Children.Add(playAll);
+            _detailTitle = new TextBlock
+            {
+                Text = "",
+                FontSize = 14.0,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = Theme.Ink,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(14.0, 0.0, 14.0, 0.0)
+            };
+            detailHead.Children.Add(_detailTitle);
+            _libraryDetail.Children.Add(detailHead);
+
+            _detailTracks = new ListBox
+            {
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0.0),
+                ItemContainerStyle = Theme.S("Row"),
+                Margin = new Thickness(14.0, 0.0, 14.0, 10.0)
+            };
+            ScrollViewer.SetVerticalScrollBarVisibility(_detailTracks, ScrollBarVisibility.Auto);
+            ScrollViewer.SetHorizontalScrollBarVisibility(_detailTracks, ScrollBarVisibility.Disabled);
+            Grid.SetRow(_detailTracks, 1);
+            _libraryDetail.Children.Add(_detailTracks);
+            body.Children.Add(_libraryDetail);
+
+            _libraryBrowse = scroll;
             Grid.SetRow(body, 1);
             page.Children.Add(body);
             return page;
@@ -1401,15 +1451,6 @@ namespace Hd2Qd.HD2Music
 
             // no heading: the in-game sheet already owns the title, and the rows speak for themselves
             DockPanel head = new DockPanel { LastChildFill = false, Margin = new Thickness(0.0) };
-            _auditionButton = GhostButton("试听本句", delegate { ToggleAudition(); });
-            _auditionButton.Height = 22.0;
-            _auditionButton.MinHeight = 22.0;
-            _auditionButton.FontSize = 10.0;
-            _auditionButton.Padding = new Thickness(8.0, 0.0, 8.0, 0.0);
-            _auditionButton.Margin = new Thickness(0.0);
-            DockPanel.SetDock(_auditionButton, Dock.Right);
-            head.Children.Add(_auditionButton);
-
             Button bigger = new Button
             {
                 Content = "+",
@@ -1464,29 +1505,8 @@ namespace Hd2Qd.HD2Music
             return card;
         }
 
-        void ToggleAudition()
-        {
-            if (_auditioning)
-            {
-                _engine.StopAudition();
-                return;
-            }
-            UiState state = _engine.Snapshot();
-            int index = state.LyricIndex;
-            if (index < 0 || index >= state.LyricRows.Count)
-            {
-                return;
-            }
-            LyricLine line = state.LyricRows[index];
-            double end = index + 1 < state.LyricRows.Count ? state.LyricRows[index + 1].At : line.At + 6.0;
-            _engine.Audition(line.At, end);
-        }
-
         void RefreshLyricSheet(UiState state)
         {
-            _auditioning = state.Audition;
-            _auditionButton.Content = I18n.Text(_auditioning ? "停止试听" : "试听本句");
-            _auditionButton.Visibility = state.LyricRows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             string signature = state.LyricRows.Count + "|" + state.Title
                 + "|" + (state.LyricRows.Count > 0 ? state.LyricRows[0].Text : "");
             if (signature != _lyricSheetSignature)
@@ -2217,6 +2237,12 @@ namespace Hd2Qd.HD2Music
             _libraryCount.Text = source.Count.ToString();
             _recommendedButton.Style = Theme.S(_showRecommended ? "Primary" : "Ghost");
             _myPlaylistsButton.Style = Theme.S(_showRecommended ? "Ghost" : "Primary");
+            // the detail pane has its own signature: refreshing the card grid early must not
+            // starve it of the fetched tracks
+            if (_libraryDetail.Visibility == Visibility.Visible)
+            {
+                RefreshDetail(state);
+            }
             string signature = (_showRecommended ? "r:" : "p:") + string.Join("|", source.Select(p => p.Id + p.Name));
             if (signature == _librarySignature)
             {
@@ -2229,6 +2255,55 @@ namespace Hd2Qd.HD2Music
                 _cards.Children.Add(PlaylistCard(i, source[i]));
             }
             _libraryEmpty.Visibility = source.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        void RefreshDetail(UiState state)
+        {
+            string signature = state.PreviewListId + "|" + string.Join("|", state.PlaylistTracks.Select(t => t.Id));
+            if (signature == _detailSignature)
+            {
+                return;
+            }
+            _detailSignature = signature;
+            _detailTracks.Items.Clear();
+            foreach (Track track in state.PlaylistTracks)
+            {
+                Grid row = new Grid();
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                TextBlock number = Mono((_detailTracks.Items.Count + 1).ToString("00"), 9.0, Theme.Muted);
+                row.Children.Add(number);
+
+                StackPanel words = new StackPanel
+                {
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(10.0, 0.0, 8.0, 0.0)
+                };
+                words.Children.Add(new TextBlock
+                {
+                    Text = track.Title,
+                    FontSize = 12.5,
+                    Foreground = Theme.Ink,
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                });
+                words.Children.Add(new TextBlock
+                {
+                    Text = track.Artist,
+                    FontSize = 9.5,
+                    Foreground = Theme.Muted,
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                });
+                Grid.SetColumn(words, 1);
+                row.Children.Add(words);
+
+                Button add = GhostButton("＋ 加入", delegate { _engine.AddTrackToQueue(track); });
+                add.FontSize = 10.0;
+                add.Padding = new Thickness(8.0, 0.0, 8.0, 0.0);
+                Grid.SetColumn(add, 2);
+                row.Children.Add(add);
+                _detailTracks.Items.Add(new ListBoxItem { Content = row });
+            }
         }
 
         FrameworkElement PlaylistCard(int index, Playlist playlist)
@@ -2291,8 +2366,11 @@ namespace Hd2Qd.HD2Music
             };
             card.MouseLeftButtonUp += delegate
             {
-                _engine.LoadPlaylist(playlist);
-                ShowPage("queue");
+                _engine.PreviewPlaylist(playlist);
+                _detailTitle.Text = playlist.Name;
+                _detailSignature = "";
+                _libraryBrowse.Visibility = Visibility.Collapsed;
+                _libraryDetail.Visibility = Visibility.Visible;
             };
             return card;
         }

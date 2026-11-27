@@ -120,7 +120,8 @@ public sealed class StreamPlayer
 	public StreamPlayer(string executable, string heartbeat)
 	{
 		Executable = executable;
-		GameWatch = new GameWatch(heartbeat, StopOnGameChange);
+		// playback outlives the game: no callback that can close the decoder on game exit
+		GameWatch = new GameWatch(heartbeat, null);
 	}
 
 	private static double[] BuildWindow()
@@ -867,17 +868,6 @@ public sealed class StreamPlayer
 	private static double Now()
 	{
 		return (DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
-	}
-
-	public void StopOnGameChange()
-	{
-		lock (_lifecycle)
-		{
-			if (PlaybackGame != null && PlaybackGame != GameWatch.Token)
-			{
-				Close();
-			}
-		}
 	}
 
 	public void Stop()
