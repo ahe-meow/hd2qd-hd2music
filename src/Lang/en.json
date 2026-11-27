@@ -346,5 +346,13 @@
   "正在切到下一首…": "Skipping to the next track…",
   "续播失败，点播放从原处重试": "Resume failed. Press play to continue from where it stopped",
   "已取消续播，点播放可继续": "Resume cancelled. Press play to continue",
-  "正在从断开位置续播（{0}/{1}）…": "Resuming from where the stream broke ({0}/{1})…"
+  "正在从断开位置续播（{0}/{1}）…": "Resuming from where the stream broke ({0}/{1})…",
+  "上移": "Move up",
+  "下移": "Move down",
+  "移出队列": "Remove from queue",
+  "设为下一首": "Play next",
+  "加入下一首": "Queue behind the current song",
+  "EDIT": "EDIT",
+  "单击结果开始播放，⇢ 插到当前歌曲之后": "Click a result to play it, ⇢ queues it behind the current song",
+  "上移一位，下移一位，移出队列，或设为下一首": "Move up, move down, remove, or play next"
 }

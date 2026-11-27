@@ -84,6 +84,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckUnplayableSkip(asm);
             CheckLyricProtocol(asm);
             CheckStreamWatchdog(asm);
+            CheckQueueOrder(asm);
             CheckTab(asm, engineOf(asm));
             BuildWindows(asm);
 
@@ -650,6 +651,42 @@ namespace Hd2Qd.HD2Music.Verify
                 return;
             }
             Pass("lyric calibration is read from the game's own settings file");
+        }
+
+        /// <summary>Editing the queue has to renumber every row: the current index, the shuffle
+        /// history and the play-next marker are all positions, not tracks.</summary>
+        static void CheckQueueOrder(Assembly asm)
+        {
+            Type engine = asm.GetType("Hd2Qd.HD2Music.Engine");
+            MethodInfo order = engine?.GetMethod("QueueOrder", BindingFlags.NonPublic | BindingFlags.Static);
+            if (order == null)
+            {
+                Fail("Engine.QueueOrder is missing");
+                return;
+            }
+            var cases = new[]
+            {
+                new object[] { "0,2,1,3,4", 5, 2, 0, "up" },
+                new object[] { "0,1,3,2,4", 5, 2, 0, "down" },
+                new object[] { "0,1,3,4", 5, 2, 0, "remove" },
+                new object[] { "0,3,1,2,4", 5, 3, 0, "next" },
+                new object[] { "null", 5, 0, 0, "remove" },
+                new object[] { "null", 5, 0, 2, "up" },
+                new object[] { "null", 5, 4, 0, "down" },
+                new object[] { "null", 5, 1, 0, "bogus" },
+                new object[] { "null", 5, 9, 0, "remove" },
+            };
+            foreach (object[] item in cases)
+            {
+                int[] result = (int[])order.Invoke(null, new[] { item[1], item[2], item[3], item[4] });
+                string actual = result == null ? "null" : string.Join(",", result);
+                if (actual != (string)item[0])
+                {
+                    Fail("queue " + item[4] + " of row " + item[2] + " gave " + actual + ", expected " + item[0]);
+                    return;
+                }
+            }
+            Pass("queue edits renumber rows, and refuse to touch the playing one");
         }
 
         static void CheckFfmpeg(Assembly asm)        {

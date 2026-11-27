@@ -74,6 +74,8 @@ public sealed class UiState
 
 	public int TrackFirst = 1;
 
+	public int QueueRevision;
+
 	public int LyricIndex = -1;
 
 	public int SearchSerial;

@@ -111,6 +111,7 @@ namespace Hd2Qd.HD2Music
             {
                 button.Content = Text(buttonText);
                 Readable(button, buttonText);
+                if (button.ToolTip is string tip) button.ToolTip = Text(tip);
             }
             else if (node is CheckBox check && check.Content is string checkText)
             {

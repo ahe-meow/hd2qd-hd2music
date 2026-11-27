@@ -132,6 +132,13 @@ public sealed class Engine : IDisposable
 
 	private int _trackFirst = 1;
 
+	/// <summary>Bumped on every queue edit so the game can tell whether its row still refers to
+	/// the song it was drawn for.</summary>
+	private int _queueRevision;
+
+	/// <summary>The row the listener asked to hear next, honoured once by the next advance.</summary>
+	private int? _priorityNext;
+
 	private int _seekSerial;
 
 	private bool _seeking;
@@ -1111,6 +1118,8 @@ public sealed class Engine : IDisposable
 				}
 				_queueTracks.Clear();
 				_queueTracks.AddRange(saved.Tracks);
+				_queueRevision++;
+				_priorityNext = null;
 				_index = Math.Max(-1, Math.Min(saved.Index, _queueTracks.Count - 1));
 				_currentListId = saved.ListId ?? "";
 				_currentList = saved.ListName ?? "";
@@ -1314,6 +1323,7 @@ public sealed class Engine : IDisposable
 				Index = _index,
 				Count = _queueTracks.Count,
 				TrackFirst = _trackFirst,
+				QueueRevision = _queueRevision,
 				SearchSerial = _searchSerial,
 				SearchKeyword = _searchKeyword,
 				SearchState = _searchState,
@@ -1804,6 +1814,8 @@ public sealed class Engine : IDisposable
 				{
 					_queueTracks.Clear();
 					_queueTracks.AddRange(list);
+					_queueRevision++;
+					_priorityNext = null;
 					_index = -1;
 					_state = "idle";
 					_notice = list.Count == 0 ? "歌单中没有歌曲"
@@ -2094,6 +2106,8 @@ public sealed class Engine : IDisposable
 				{
 					_queueTracks.Clear();
 					_queueTracks.AddRange(list);
+					_queueRevision++;
+					_priorityNext = null;
 					_index = -1;
 					_currentListId = kind;
 					_currentList = ((kind == "daily") ? "每日推荐" : "私人 FM");
@@ -2217,6 +2231,8 @@ public sealed class Engine : IDisposable
 				{
 					_queueTracks.Clear();
 					_queueTracks.AddRange(list);
+					_queueRevision++;
+					_priorityNext = null;
 					_index = -1;
 					_currentListId = "radio_" + channel.Id;
 					_currentList = channel.Name;
@@ -2249,6 +2265,8 @@ public sealed class Engine : IDisposable
 			}
 			_queueTracks.Clear();
 			_queueTracks.AddRange(_podcastTracks);
+			_queueRevision++;
+			_priorityNext = null;
 			_currentListId = "podcast_" + channelId;
 			_currentList = "网易云播客";
 			_trackFirst = 1;
@@ -2271,6 +2289,8 @@ public sealed class Engine : IDisposable
 			}
 			_queueTracks.Clear();
 			_queueTracks.AddRange(_podcastTracks);
+			_queueRevision++;
+			_priorityNext = null;
 			_currentListId = "podcast_" + _podcastChannel;
 			_currentList = "网易云播客";
 			_trackFirst = 1;
@@ -2651,6 +2671,163 @@ public sealed class Engine : IDisposable
 		return Math.Max(0.0, value).ToString("0.###", CultureInfo.InvariantCulture);
 	}
 
+	/// <summary>The row order a queue edit produces, as old indices in their new sequence; null
+	/// when the edit is not allowed. The playing row is never moved or removed: the player is
+	/// reading from it.</summary>
+	private static int[] QueueOrder(int length, int index, int current, string operation)
+	{
+		if (index < 0 || index >= length || index == current)
+		{
+			return null;
+		}
+		List<int> positions = new List<int>(length);
+		for (int i = 0; i < length; i++)
+		{
+			positions.Add(i);
+		}
+		switch (operation)
+		{
+		case "remove":
+			positions.RemoveAt(index);
+			break;
+		case "next":
+			positions.RemoveAt(index);
+			int after = positions.IndexOf(current);
+			positions.Insert(after < 0 ? positions.Count : after + 1, index);
+			break;
+		case "up":
+			if (index == 0)
+			{
+				return null;
+			}
+			positions[index - 1] = index;
+			positions[index] = index - 1;
+			break;
+		case "down":
+			if (index >= length - 1)
+			{
+				return null;
+			}
+			positions[index + 1] = index;
+			positions[index] = index + 1;
+			break;
+		default:
+			return null;
+		}
+		return positions.ToArray();
+	}
+
+	/// <summary>Rewrite the queue and every position that points into it.</summary>
+	private void ApplyQueueEdit(int index, string operation)
+	{
+		lock (_lock)
+		{
+			int[] order = QueueOrder(_queueTracks.Count, index, _index, operation);
+			if (order == null)
+			{
+				return;
+			}
+			Dictionary<int, int> remap = new Dictionary<int, int>(order.Length);
+			List<Track> rows = new List<Track>(order.Length);
+			for (int i = 0; i < order.Length; i++)
+			{
+				remap[order[i]] = i;
+				rows.Add(_queueTracks[order[i]]);
+			}
+			_queueTracks.Clear();
+			_queueTracks.AddRange(rows);
+			int moved;
+			_index = remap.TryGetValue(_index, out moved) ? moved : -1;
+			List<int> played = new List<int>();
+			foreach (int old in _shufflePlayed)
+			{
+				if (remap.TryGetValue(old, out moved))
+				{
+					played.Add(moved);
+				}
+			}
+			_shufflePlayed.Clear();
+			foreach (int at in played)
+			{
+				_shufflePlayed.Add(at);
+			}
+			List<int> history = new List<int>();
+			foreach (int old in _shuffleHistory)
+			{
+				if (remap.TryGetValue(old, out moved))
+				{
+					history.Add(moved);
+				}
+			}
+			_shuffleHistory.Clear();
+			_shuffleHistory.AddRange(history);
+			_shuffleNext = (_shuffleNext.HasValue && remap.TryGetValue(_shuffleNext.Value, out moved)) ? moved : (int?)null;
+			int priority = remap.TryGetValue(index, out moved) ? moved : -1;
+			_priorityNext = (operation == "next" && priority >= 0) ? priority
+				: ((_priorityNext.HasValue && remap.TryGetValue(_priorityNext.Value, out moved)) ? moved : (int?)null);
+			_trackFirst = Math.Min(_trackFirst, Math.Max(1, _queueTracks.Count - 4));
+			_queueRevision++;
+		}
+	}
+
+	/// <summary>Move, drop or promote a queue row. The playing row is off limits: the decoder is
+	/// reading from it, and an edit that moved it would desync the stream from the list.</summary>
+	public void QueueEdit(int index, string operation)
+	{
+		if (_lockedOut)
+		{
+			Dictionary<string, string> helper = HelperState();
+			if (Value(helper, "list_id") != _currentListId)
+			{
+				return;
+			}
+			SendCommand("queue_edit " + _currentListId + " " + (index + 1).ToString(CultureInfo.InvariantCulture)
+				+ " " + Value(helper, "queue_revision") + " " + operation);
+			return;
+		}
+		ApplyQueueEdit(index, operation);
+	}
+
+	/// <summary>Send a search hit to the front of the queue without interrupting the current song;
+	/// with nothing queued it seeds the list and takes the first slot.</summary>
+	public void SearchEnqueue(int index)
+	{
+		if (_lockedOut)
+		{
+			Dictionary<string, string> helper = HelperState();
+			if (Value(helper, "search_serial") != _searchSerial.ToString(CultureInfo.InvariantCulture))
+			{
+				return;
+			}
+			SendCommand("search_enqueue " + _searchSerial.ToString(CultureInfo.InvariantCulture)
+				+ " " + (index + 1).ToString(CultureInfo.InvariantCulture));
+			return;
+		}
+		lock (_lock)
+		{
+			if (index < 0 || index >= _searchResults.Count || _state == "loading")
+			{
+				return;
+			}
+			Track track = _searchResults[index];
+			if (_queueTracks.Count > 0)
+			{
+				_queueTracks.Add(track);
+				ApplyQueueEdit(_queueTracks.Count - 1, "next");
+				return;
+			}
+			_queueTracks.Add(track);
+			_currentListId = "search";
+			_currentList = "搜索结果";
+			_trackFirst = 1;
+			_shufflePlayed.Clear();
+			_shuffleNext = null;
+			_shuffleHistory.Clear();
+			_priorityNext = 0;
+			_queueRevision++;
+		}
+	}
+
 	/// <summary>The shared calibration file holds one offset per player. Only the netease line is
 	/// ours; a value outside the game's ±3 s range is clamped rather than trusted.</summary>
 	private static int LyricOffsetMs(string text)
@@ -2786,6 +2963,10 @@ public sealed class Engine : IDisposable
 	private void RecordPosition(int index)
 	{
 		_shuffleNext = null;
+		if (_priorityNext.HasValue && index == _priorityNext.Value)
+		{
+			_priorityNext = null;
+		}
 		_shufflePlayed.Add(index);
 		if (_shuffleHistory.Count == 0 || _shuffleHistory[_shuffleHistory.Count - 1] != index)
 		{
@@ -2801,6 +2982,11 @@ public sealed class Engine : IDisposable
 	{
 		lock (_lock)
 		{
+			if (_priorityNext.HasValue)
+			{
+				// a row the listener moved up to play next wins over the order, even shuffle
+				return _priorityNext.Value;
+			}
 			if (_order == "repeat" && !manual && _index >= 0)
 			{
 				return _index;
@@ -3203,6 +3389,8 @@ public sealed class Engine : IDisposable
 			}
 			_queueTracks.Clear();
 			_queueTracks.AddRange(_searchResults);
+			_queueRevision++;
+			_priorityNext = null;
 			_currentList = "搜索结果";
 			_currentListId = "search";
 			_trackFirst = 1;
@@ -3544,6 +3732,7 @@ public sealed class Engine : IDisposable
 			"lyric_marks=" + text,
 			"list_id=" + Util.Clean(currentListId),
 			"track_first=" + trackFirst,
+			"queue_revision=" + _queueRevision.ToString(CultureInfo.InvariantCulture),
 			"lyric_translation=" + Util.Clean(value6),
 			"lyric_at=" + ((index >= 0 && index < list7.Count) ? list7[index].At.ToString("0.000", CultureInfo.InvariantCulture) : ""),
 			"lyric_total=" + list7.Count.ToString(CultureInfo.InvariantCulture),
@@ -4036,6 +4225,22 @@ public sealed class Engine : IDisposable
 					}
 					break;
 				}
+			case 'q':
+			{
+				if (!(text2 == "queue_edit"))
+				{
+					break;
+				}
+				string[] parts = value.Split(new char[2] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+				if (parts.Length == 4 && parts[0] == _currentListId
+					&& int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var row)
+					&& row >= 1 && row <= _queueTracks.Count
+					&& parts[2] == _queueRevision.ToString(CultureInfo.InvariantCulture))
+				{
+					QueueEdit(row - 1, parts[3]);
+				}
+				break;
+			}
 			case 't':
 				if (!(text2 == "track_page"))
 				{
@@ -4165,6 +4370,16 @@ public sealed class Engine : IDisposable
 				}
 				catch
 				{
+				}
+			}
+			else if (text2 == "search_enqueue")
+			{
+				string[] parts = value.Split(new char[2] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+				if (parts.Length == 2 && parts[0] == _searchSerial.ToString(CultureInfo.InvariantCulture)
+					&& int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var row)
+					&& row >= 1 && row <= _searchResults.Count)
+				{
+					SearchEnqueue(row - 1);
 				}
 			}
 			break;

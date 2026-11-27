@@ -68,6 +68,10 @@ namespace Hd2Qd.HD2Music
         bool _showRecommended;
         string _librarySignature = "";
 
+        /// <summary>Width the queue rows give their action column; the header uses the same,
+        /// or the two columns drift apart.</summary>
+        const double EditWidth = 100.0;
+
         ListBox _queue;
         TextBlock _queueCount;
         TextBlock _queueEmpty;
@@ -1053,7 +1057,7 @@ namespace Hd2Qd.HD2Music
             header.Children.Add(queueActions);
             page.Children.Add(header);
 
-            Grid tableHeader = TableHeader("#", "TRACK", "LENGTH");
+            Grid tableHeader = TableHeader("#", "TRACK", "LENGTH", "EDIT");
             Grid.SetRow(tableHeader, 1);
             page.Children.Add(tableHeader);
 
@@ -1139,7 +1143,7 @@ namespace Hd2Qd.HD2Music
             Grid.SetRow(_searchHint, 1);
             page.Children.Add(_searchHint);
 
-            Grid tableHeader = TableHeader("#", "TRACK", "LENGTH");
+            Grid tableHeader = TableHeader("#", "TRACK", "LENGTH", "QUEUE");
             Grid.SetRow(tableHeader, 2);
             page.Children.Add(tableHeader);
 
@@ -1390,7 +1394,7 @@ namespace Hd2Qd.HD2Music
             return page;
         }
 
-        Grid TableHeader(string a, string b, string c)
+        Grid TableHeader(string a, string b, string c, string d = null)
         {
             Grid row = new Grid { Height = 30.0 };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36.0) });
@@ -1399,13 +1403,22 @@ namespace Hd2Qd.HD2Music
             row.Children.Add(HeaderCell(a, 0));
             row.Children.Add(HeaderCell(b, 1));
             row.Children.Add(HeaderCell(c, 2));
+            int columns = 3;
+            if (d != null)
+            {
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(EditWidth) });
+                TextBlock cell = HeaderCell(d, 3);
+                cell.TextAlignment = TextAlignment.Right;
+                row.Children.Add(cell);
+                columns = 4;
+            }
             Border line = new Border
             {
                 Height = 1.0,
                 Background = Theme.Grid,
                 VerticalAlignment = VerticalAlignment.Bottom
             };
-            Grid.SetColumnSpan(line, 3);
+            Grid.SetColumnSpan(line, columns);
             row.Children.Add(line);
             return row;
         }
@@ -2086,7 +2099,7 @@ namespace Hd2Qd.HD2Music
         void RefreshQueue(UiState state)
         {
             _queueCount.Text = state.Count.ToString();
-            string signature = state.Count + ":" + state.Index;
+            string signature = state.Count + ":" + state.Index + ":" + state.QueueRevision;
             if (signature == _queueSignature)
             {
                 return;
@@ -2096,7 +2109,16 @@ namespace Hd2Qd.HD2Music
             for (int i = 0; i < state.Queue.Count; i++)
             {
                 int at = i;
-                _queue.Items.Add(TrackRow(i, state.Queue[i], i == state.Index, delegate { PlayQueueAt(at); }));
+                bool current = i == state.Index;
+                // the row being decoded is not editable: moving it would desync the stream
+                FrameworkElement[] actions = current ? null : new FrameworkElement[]
+                {
+                    TinyButton("↑", "上移", delegate { _engine.QueueEdit(at, "up"); }),
+                    TinyButton("↓", "下移", delegate { _engine.QueueEdit(at, "down"); }),
+                    TinyButton("✕", "移出队列", delegate { _engine.QueueEdit(at, "remove"); }),
+                    TinyButton("⇢", "设为下一首", delegate { _engine.QueueEdit(at, "next"); })
+                };
+                _queue.Items.Add(TrackRow(i, state.Queue[i], current, delegate { PlayQueueAt(at); }, actions));
             }
             _queueEmpty.Visibility = state.Queue.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -2105,7 +2127,7 @@ namespace Hd2Qd.HD2Music
         {
             _searchHint.Text = string.IsNullOrEmpty(state.SearchKeyword)
                 ? "输入关键词后回车；结果会按歌曲列出。"
-                : "关键词：" + state.SearchKeyword + "   ·   " + state.SearchResults.Count + " 首   ·   单击结果开始播放";
+                : "关键词：" + state.SearchKeyword + "   ·   " + state.SearchResults.Count + " 首   ·   单击结果开始播放，⇢ 插到当前歌曲之后";
             string signature = state.SearchSerial + ":" + state.SearchResults.Count + ":" + state.SearchState;
             if (signature == _searchSignature)
             {
@@ -2116,7 +2138,10 @@ namespace Hd2Qd.HD2Music
             for (int i = 0; i < state.SearchResults.Count; i++)
             {
                 int at = i;
-                _results.Items.Add(TrackRow(i, state.SearchResults[i], false, delegate { _engine.SearchPlay(at); }));
+                Button enqueue = TinyButton("⇢", "加入下一首", delegate { _engine.SearchEnqueue(at); });
+                enqueue.Width = 24.0;
+                enqueue.MinWidth = 24.0;
+                _results.Items.Add(TrackRow(i, state.SearchResults[i], false, delegate { _engine.SearchPlay(at); }, new FrameworkElement[] { enqueue }));
             }
             _searchEmpty.Visibility = state.SearchResults.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             _searchEmpty.Text = state.SearchState == "loading" ? "正在搜索…" : "输入关键词，结果会按歌曲列出。";
@@ -2196,7 +2221,7 @@ namespace Hd2Qd.HD2Music
             _episodeTitle.Text = state.PodcastTracks.Count > 0 ? state.PodcastTracks.Count + " 期" : "";
         }
 
-        ListBoxItem TrackRow(int index, Track track, bool current, Action play)
+        ListBoxItem TrackRow(int index, Track track, bool current, Action play, FrameworkElement[] trailing = null)
         {
             Grid row = new Grid { Background = Brushes.Transparent };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36.0) });
@@ -2228,11 +2253,59 @@ namespace Hd2Qd.HD2Music
             length.VerticalAlignment = VerticalAlignment.Center;
             Grid.SetColumn(length, 2);
             row.Children.Add(length);
+            // the column is reserved even when it stays empty, or the length column would
+            // shift on the one row that has no actions
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(EditWidth) });
+            if (trailing != null && trailing.Length > 0)
+            {
+                StackPanel actions = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                foreach (FrameworkElement item in trailing)
+                {
+                    actions.Children.Add(item);
+                }
+                Grid.SetColumn(actions, 3);
+                row.Children.Add(actions);
+            }
             if (play != null)
             {
                 row.MouseLeftButtonUp += delegate { play(); };
             }
             return new ListBoxItem { Tag = index, Content = row };
+        }
+
+        /// <summary>A one-glyph button for the row actions: small enough to sit in a 12 px line,
+        /// loud enough on hover to be found.</summary>
+        static Button TinyButton(string text, string tip, Action action)
+        {
+            Button button = new Button
+            {
+                Content = text,
+                Style = Theme.S("Ghost"),
+                Width = 22.0,
+                Height = 20.0,
+                MinHeight = 20.0,
+                MinWidth = 22.0,
+                Padding = new Thickness(0.0),
+                FontSize = 11.0,
+                Margin = new Thickness(2.0, 0.0, 0.0, 0.0),
+                ToolTip = tip
+            };
+            button.Click += delegate
+            {
+                try
+                {
+                    action();
+                }
+                catch
+                {
+                }
+            };
+            return button;
         }
 
         // ---------------------------------------------------------------- small pieces
