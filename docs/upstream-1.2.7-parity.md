@@ -2,7 +2,7 @@
 
 日期：2026-11-27
 上游位置：`C:\Users\madma\Desktop\游戏\HD2 TOOLS\HD2 Music\`
-本地插件：`hd2qd-hd2music`（1.6.0）
+本地插件：`hd2qd-hd2music`（1.7.0）
 基线：`HD2 Music/网易云在线助手`（上游 11-25 版）与 `HD2 Music/HD2 Music - Arsenal.zip`（mod 1.2.3）
 
 ## 一、结论
@@ -94,18 +94,42 @@ Mod 侧（`HD2 Music - Arsenal.zip` 1.2.3 → 1.2.7）同步变化，可见于 `
    `lyric_window`/`audition`/`audition_stop` 三个命令 + UI。属于播放页增强，不影响基本播放。
 
 9. **连接诊断**（~30 行，按需）
-   `deployment` 固定写 `ready`、`diagnostic_recovery` 写最近一次续播事件即可让新 mod 的诊断页不为空。
+   只跟 `diagnostic_recovery`（最近一次续播事件）。`deployment` 不写——实测是助手侧握手状态，见第五节。
 
 **不建议跟进**：内嵌 CPython 运行时、`_hd2runtime.pyd`、TUI/拼音输入、SMTC 的 Next Lyric 标记、3D 歌词与配色、封面贴图分块优化——这些在 mod 侧或 SMTC 程序侧，插件不参与。
 
-## 五、存疑
+## 五、`deployment` 实测（2026-11-28）
 
-1. **新 mod 对缺字段的容忍度无法验证**：`patch_0.stream` 与 `patch_0` 均为加密/压缩，取不到可读 Lua。无法确认缺 `lyric_context`/`queue_revision` 时是「少显示几行」还是「整块不渲染」。建议先在旧 mod 上验证插件正常，再单独升级 mod 观察。
-2. **`deployment` 的取值语义未知**：只知道是 `game_watch.deployment_status()` 的字符串。若 mod 用它判断「助手是否已正确部署」，插件随便填可能更糟，需要实测。
-3. **`audition` 与 `lyric_window` 的 UI 是否在新 mod 里对「不支持该命令的助手」隐藏**：未知。若隐藏则优先级下降。
-4. 上游 `search_radios` 换到 `/api/search/get/web` 是否为**必需**（旧接口可能仍可用）：未实测，翻页时才需要换。
+结论：**不写该字段**。它是助手侧的 Data Hub 握手/验签状态，不是任务加载或空投状态；缺省时最坏结果是游戏内「连接诊断」那一行没有值，播放、歌词、队列都不经过它。
 
-## 六、兼容性判断
+取值（用助手自带 `runtime/python.exe` 实跑 `GameWatch.deployment_status()`）：
+
+| 注入状态 | 返回 |
+| --- | --- |
+| 默认（`session=None`） | `waiting` |
+| `session` 设为任意非 None（`{}`、`{"pid":1}`、`object()`） | `verified` |
+| `approved` / `token` / `stamp` / `media` / 进程 pid 任意组合（`session` 仍为 None） | 仍 `waiting` |
+
+12 种心跳内容（`0`、`1`、`2`、`1 0`、`1 1`、`1 mission`、JSON、时间戳…）逐一试过，全部 `waiting`：`sample()` 先要 `game_pid()` 在进程表里找到游戏，未启动游戏时直接返回 `None`，心跳内容再变也不影响结果。所以这个值只反映「模组是否已完成与助手的握手并验签」，正常使用中恒为 `verified`；`waiting` 只在助手起来、模组还没握手时出现。
+
+模组侧的证据（`HD2 Music - Arsenal.zip` → `data/9ba626afa44a3aa3.patch_0`）：
+
+- 包里只有一个脚本 `mods/codex/hd2_music`（11 844 436 字节、非字节码）。其中 11 MB 是拼音表和字宽表，代码是混淆壳。
+- 壳只有 4 处 `io.open`，全是 `hd2_music_start.dat`（写 token）／`hd2_music_ready.dat`（读回校验）／`hd2_music_data.dat`（读 ≤1 MB 载荷，magic `d5d713be8f498220`）。整个 11.8 MB 里没有 `ncm`、`ncm_state.txt`、`deployment`、`lyric` 这些字面量——真正的状态读取逻辑在运行时解出来的 `startup` 块里（`_b15(_db5,'@mods/codex/hd2_music/startup')`），字符串是加密的，静态取不到。
+- 壳的加载是有门的：`on_enable` 通过 `loadstring('return 0x57')==87` 探针后，`on_update` 必须 `_02e()`（写 start、读 ready 比对 token）与 `_72b()`（解析 data.dat）都成功，才会把 `startup` 块 `loadstring` 起来。**助手不运行时模组不会加载自己的主体**，这与《在线版使用说明》「需要 MDL3、Data Hub 和在线助手」一致。
+- 使用说明第 38 行把「助手／资源验签／Data Hub／歌词来源／绘制状态」列在「设置 → 模组设置 → 连接诊断」里，`deployment` 的消费点就在这里。
+
+因此插件的取舍：不伪造值。助手正常运行时该字段恒为 `verified`；插件不参与握手，能写的只有 `waiting`（= 未验签），写进去反而可能在诊断页显示成异常状态。缺省是 nil，等价于「未知」，更中性。
+
+想在游戏里复核，用 `.analysis/deployment_toggle.py`：`--pin verified --minutes 3` 在插件播放期间持续把该行钉进 `ncm_state.txt`（插件每 200 ms 重写，所以必须循环补），对比 `--off` 时诊断页那一行与 3D 歌词、2D 歌词、队列编辑是否一致。
+
+## 六、其余存疑
+
+1. **新 mod 对缺字段的容忍度**：1.2.4 明文源码已给出答案——`parse_kv` 只按 `[%w_]+=...` 建表，缺键就是 `nil`，读侧一律 `tonumber(x) or 默认值`，不会报错；1.2.7 正文运行时才交付，但同一套读取风格。逐字段契约见 `docs/mod-reverse-1.2.4.md`。
+2. **`audition` 与 `lyric_window` 的 UI 是否在新 mod 里对「不支持该命令的助手」隐藏**：未知。若隐藏则优先级下降。
+3. 上游 `search_radios` 换到 `/api/search/get/web` 是否为**必需**（旧接口可能仍可用）：未实测，翻页时才需要换。
+
+## 七、兼容性判断
 
 插件写的是**基础协议子集**（`state/title/artist/pos/duration/volume/lyric/lyric_marks/previous_lyric/next_lyric/lyric_index/lyric_translation/world_*/spectrum/cover_*`），这些字段上游一个都没删、没改语义。新增字段全是**追加**，没有改名。
 

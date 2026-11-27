@@ -4042,6 +4042,9 @@ public sealed class Engine : IDisposable
 			"account=" + Util.Clean(account),
 			"notice=" + Util.Clean(notice),
 			"account_notice=" + Util.Clean(_cookieNotice),
+			// the helper writes this on every frame, outside the search block: 1.2.7's own reader
+			// is hidden in the runtime-delivered chunk, so the writer follows the helper
+			"account_loading=" + (accountLoading ? 1 : 0),
 			"state=" + state,
 			"qr=" + matrix,
 			"playlist=" + Util.Clean(currentList),
@@ -4143,7 +4146,9 @@ public sealed class Engine : IDisposable
 		foreach (Playlist item3 in list2)
 		{
 			dictionary.TryGetValue(item3.Id, out var value9);
-			list8.Add("recommend=" + item3.Id + "\t" + Util.Clean(item3.Name) + "\t" + value9);
+			string recommendName = Util.Clean(item3.Name);
+			// the mod's row pattern needs one character of name; an empty one would drop the card
+			list8.Add("recommend=" + item3.Id + "\t" + (recommendName.Length == 0 ? item3.Id : recommendName) + "\t" + value9);
 			if (dictionary2.TryGetValue(item3.Id, out var value10))
 			{
 				list8.Add("recommend_key=" + item3.Id + "\t" + value10);
@@ -4164,7 +4169,9 @@ public sealed class Engine : IDisposable
 			list8.Add("radio_serial=" + radioSerial.ToString(CultureInfo.InvariantCulture));
 			foreach (RadioChannel item4 in list5)
 			{
-				list8.Add("radio=" + item4.Id + "\t" + Util.Clean(item4.Name) + "\t" + Util.Clean(item4.Description));
+				string radioName = Util.Clean(item4.Name);
+				// same one-character rule as recommend=: a nameless channel would vanish in game
+				list8.Add("radio=" + item4.Id + "\t" + (radioName.Length == 0 ? item4.Id : radioName) + "\t" + Util.Clean(item4.Description));
 			}
 		}
 		if (!string.IsNullOrEmpty(podcastState))
@@ -4180,7 +4187,6 @@ public sealed class Engine : IDisposable
 		}
 		if (!string.IsNullOrEmpty(searchState))
 		{
-			list8.Add("account_loading=" + (accountLoading ? 1 : 0));
 			list8.Add("search_state=" + searchState);
 			list8.Add("search_serial=" + searchSerial);
 			list8.Add("search_keyword=" + Util.Clean(searchKeyword));

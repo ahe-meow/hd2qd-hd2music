@@ -140,6 +140,15 @@ from `ncm_cmd_*.txt`, and `deployment` is the one field deliberately not written
 has no deployment story to report). The interface is bilingual. Settings → 语言 offers
 跟随 HD2QD / 强制中文 / 强制 English; "follow" tracks the manager's language, and the choice is
 stored in `ncm_language.txt`.
+
+The reader side was checked against the mod itself, not only the helper: HD2 Music 1.2.4 ships
+plaintext Lua, and `docs/mod-reverse-1.2.4.md` records every row pattern, value vocabulary
+(`quality` is `hires`, `order` is `order|shuffle|repeat`, `state` is the four playback words),
+the 32-hex spectrum frame bound to `seek_serial`, and the loader hop that keeps 1.2.7's body out
+of the package. Two fixes came out of it: `account_loading` is published on every frame like the
+helper does, and a nameless `recommend=`/`radio=` row falls back to its id because the mod's
+pattern needs one character of name and would otherwise drop the card.
+
 The tab also exposes 每日推荐, 私人 FM, STOP, radio search and podcast filter,
 plus a verification-state website link and a karaoke prefix preview in the lyric panel.
 
@@ -177,7 +186,7 @@ the fallback window and the login window off-screen. It needs no game, network o
 Current output:
 
 ```
-  ok   assembly name HD2QD.HD2Music, version 1.6.0
+  ok   assembly name HD2QD.HD2Music, version 1.7.0
   ok   target framework .NETFramework,Version=v4.8
   ok   Api = 2 (a const the manager reads before running any code)
   ok   Kind = window
