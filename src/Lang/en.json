@@ -357,6 +357,8 @@
   "上移一位，下移一位，移出队列，或设为下一首": "Move up, move down, remove, or play next",
   "更多频道": "More channels",
   "更多节目": "More episodes",
+  "试听本句": "Loop this line",
+  "停止试听": "Stop looping",
   "重试": "Retry",
   "正在加载…": "Loading…"
 }

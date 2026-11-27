@@ -102,6 +102,8 @@ public sealed class UiState
 
 	public bool Seeking;
 
+	public bool Audition;
+
 	public List<Playlist> Lists = new List<Playlist>();
 
 	public List<Playlist> Recommended = new List<Playlist>();
@@ -113,4 +115,7 @@ public sealed class UiState
 	public List<RadioChannel> Radios = new List<RadioChannel>();
 
 	public List<Track> PodcastTracks = new List<Track>();
+
+	/// <summary>The whole lyric sheet, so the panel can list it and not just the current line.</summary>
+	public List<LyricLine> LyricRows = new List<LyricLine>();
 }

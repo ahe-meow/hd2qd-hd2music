@@ -451,7 +451,7 @@ namespace Hd2Qd.HD2Music.Verify
         static void CheckPaging(Assembly asm)
         {
             Type ui = asm.GetType("Hd2Qd.HD2Music.UiState");
-            foreach (string field in new[] { "RadioMore", "RadioOffset", "PodcastMore", "PodcastOffset", "QueueRevision" })
+            foreach (string field in new[] { "RadioMore", "RadioOffset", "PodcastMore", "PodcastOffset", "QueueRevision", "Audition", "LyricRows" })
             {
                 if (ui.GetField(field) == null)
                 {
@@ -460,7 +460,7 @@ namespace Hd2Qd.HD2Music.Verify
                 }
             }
             Type engine = asm.GetType("Hd2Qd.HD2Music.Engine");
-            foreach (string method in new[] { "RadioMore", "PodcastMore", "SearchEnqueue", "QueueEdit" })
+            foreach (string method in new[] { "RadioMore", "PodcastMore", "SearchEnqueue", "QueueEdit", "Audition", "StopAudition", "LyricWindow" })
             {
                 if (engine.GetMethod(method, BindingFlags.Instance | BindingFlags.Public) == null)
                 {
@@ -468,7 +468,7 @@ namespace Hd2Qd.HD2Music.Verify
                     return;
                 }
             }
-            Pass("paging fields and commands present");
+            Pass("paging, lyric window and audition surface present");
         }
 
         static void CheckBrowseUi(Assembly asm)

@@ -50,6 +50,11 @@ namespace Hd2Qd.HD2Music
         Slider _progress;
         Slider _volume;
         Button _play;
+        ListBox _lyricSheet;
+        Button _auditionButton;
+        bool _auditioning;
+        string _lyricSheetSignature = "";
+        int _lyricShown = -1;
         SpectrumBars _spectrum;
         ListBox _peek;
         TextBlock _peekCount;
@@ -697,8 +702,16 @@ namespace Hd2Qd.HD2Music
                 VerticalAlignment = VerticalAlignment.Center,
                 Child = lyrics
             };
-            Grid.SetRow(lyricBox, 1);
-            hero.Children.Add(lyricBox);
+            Grid lyricRow = new Grid();
+            lyricRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
+            lyricRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16.0) });
+            lyricRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300.0) });
+            lyricRow.Children.Add(lyricBox);
+            FrameworkElement sheet = BuildLyricSheet();
+            Grid.SetColumn(sheet, 2);
+            lyricRow.Children.Add(sheet);
+            Grid.SetRow(lyricRow, 1);
+            hero.Children.Add(lyricRow);
 
             Grid spectrumRow = new Grid { Margin = new Thickness(0.0, 6.0, 0.0, 0.0) };
             spectrumRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80.0) });
@@ -1404,6 +1417,135 @@ namespace Hd2Qd.HD2Music
             return page;
         }
 
+        /// <summary>The whole lyric sheet beside the current line: click a row to seek there, and
+        /// the button repeats the line being sung so it can be heard again.</summary>
+        FrameworkElement BuildLyricSheet()
+        {
+            Border card = Card(null);
+            card.Margin = new Thickness(0.0, 16.0, 0.0, 8.0);
+            Grid inner = new Grid();
+            inner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(30.0) });
+            inner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.0, GridUnitType.Star) });
+
+            DockPanel head = new DockPanel { LastChildFill = false, Margin = new Thickness(10.0, 0.0, 10.0, 0.0) };
+            head.Children.Add(new TextBlock
+            {
+                Text = "LYRIC SHEET",
+                FontFamily = Theme.Font("Mono"),
+                FontSize = 8.5,
+                Foreground = Theme.Muted,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            _auditionButton = GhostButton("试听本句", delegate { ToggleAudition(); });
+            _auditionButton.Height = 22.0;
+            _auditionButton.MinHeight = 22.0;
+            _auditionButton.FontSize = 10.0;
+            _auditionButton.Padding = new Thickness(8.0, 0.0, 8.0, 0.0);
+            _auditionButton.Margin = new Thickness(0.0);
+            DockPanel.SetDock(_auditionButton, Dock.Right);
+            head.Children.Add(_auditionButton);
+            inner.Children.Add(head);
+
+            _lyricSheet = new ListBox
+            {
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0.0),
+                ItemContainerStyle = Theme.S("Row"),
+                Margin = new Thickness(2.0, 0.0, 2.0, 4.0)
+            };
+            ScrollViewer.SetHorizontalScrollBarVisibility(_lyricSheet, ScrollBarVisibility.Disabled);
+            _lyricSheet.MouseLeftButtonUp += delegate
+            {
+                if (_lyricSheet.SelectedItem is ListBoxItem item && item.Tag is double at)
+                {
+                    _engine.Seek(at);
+                }
+            };
+            Grid.SetRow(_lyricSheet, 1);
+            inner.Children.Add(_lyricSheet);
+            card.Child = inner;
+            return card;
+        }
+
+        void ToggleAudition()
+        {
+            if (_auditioning)
+            {
+                _engine.StopAudition();
+                return;
+            }
+            UiState state = _engine.Snapshot();
+            int index = state.LyricIndex;
+            if (index < 0 || index >= state.LyricRows.Count)
+            {
+                return;
+            }
+            LyricLine line = state.LyricRows[index];
+            double end = index + 1 < state.LyricRows.Count ? state.LyricRows[index + 1].At : line.At + 6.0;
+            _engine.Audition(line.At, end);
+        }
+
+        void RefreshLyricSheet(UiState state)
+        {
+            _auditioning = state.Audition;
+            _auditionButton.Content = I18n.Text(_auditioning ? "停止试听" : "试听本句");
+            _auditionButton.Visibility = state.LyricRows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            string signature = state.LyricRows.Count + "|" + state.Title
+                + "|" + (state.LyricRows.Count > 0 ? state.LyricRows[0].Text : "");
+            if (signature != _lyricSheetSignature)
+            {
+                _lyricSheetSignature = signature;
+                _lyricSheet.Items.Clear();
+                foreach (LyricLine line in state.LyricRows)
+                {
+                    Grid row = new Grid();
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(46.0) });
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
+                    TextBlock at = Mono(Util.FormatTime(line.At), 8.5, Theme.Muted);
+                    at.VerticalAlignment = VerticalAlignment.Center;
+                    row.Children.Add(at);
+                    TextBlock words = new TextBlock
+                    {
+                        Text = string.IsNullOrEmpty(line.Translation) ? line.Text : line.Text + "  " + line.Translation,
+                        FontSize = 11.0,
+                        Foreground = Theme.Muted,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    Grid.SetColumn(words, 1);
+                    row.Children.Add(words);
+                    row.Background = Brushes.Transparent;
+                    _lyricSheet.Items.Add(new ListBoxItem { Tag = line.At, Content = row });
+                }
+                _lyricShown = -1;
+            }
+            if (state.LyricIndex != _lyricShown)
+            {
+                _lyricShown = state.LyricIndex;
+                for (int i = 0; i < _lyricSheet.Items.Count; i++)
+                {
+                    if (_lyricSheet.Items[i] is not ListBoxItem item || item.Content is not Grid row)
+                    {
+                        continue;
+                    }
+                    bool current = i == state.LyricIndex;
+                    row.Background = current ? Theme.Ground900 : Brushes.Transparent;
+                    foreach (UIElement child in row.Children)
+                    {
+                        if (child is TextBlock block)
+                        {
+                            block.Foreground = current ? Theme.Yellow : Theme.Muted;
+                            block.FontWeight = current ? FontWeights.SemiBold : FontWeights.Normal;
+                        }
+                    }
+                }
+                if (state.LyricIndex >= 0 && state.LyricIndex < _lyricSheet.Items.Count)
+                {
+                    _lyricSheet.ScrollIntoView(_lyricSheet.Items[state.LyricIndex]);
+                }
+            }
+        }
+
         Grid TableHeader(string a, string b, string c, string d = null)
         {
             Grid row = new Grid { Height = 30.0 };
@@ -1883,6 +2025,7 @@ namespace Hd2Qd.HD2Music
             RefreshQueue(state);
             RefreshSearch(state);
             RefreshRadio(state);
+            RefreshLyricSheet(state);
 
             _statusAccount.Text = I18n.Text("ACCOUNT ") + (string.IsNullOrEmpty(state.Account) ? "—" : state.Account);
             string reason = state.Notice;

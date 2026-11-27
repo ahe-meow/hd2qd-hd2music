@@ -143,6 +143,21 @@ public sealed class Engine : IDisposable
 
 	private bool _seeking;
 
+	/// <summary>One lyric sentence on repeat: where it starts and ends, whether the song was
+	/// paused when the listener asked for it, and when the audition gives up by itself.</summary>
+	private bool _audition;
+
+	private double _auditionStart;
+
+	private double _auditionEnd;
+
+	private bool _auditionPaused;
+
+	private DateTime _auditionUntil;
+
+	/// <summary>The row the game centres its lyric window on, or null when it has none open.</summary>
+	private int? _lyricWindow;
+
 	private double? _resumePosition;
 
 	private int _resumeAttempts;
@@ -1049,6 +1064,7 @@ public sealed class Engine : IDisposable
 		PollLogin();
 		CheckGame(prompt: false);
 		AdvanceBlocked();
+		CheckAudition();
 		if (Player != null)
 		{
 			int? num = Player.Result();
@@ -1056,11 +1072,29 @@ public sealed class Engine : IDisposable
 			{
 				if (num == 0)
 				{
-					int next = NextPosition(manual: false);
-					Post(delegate
+					if (_audition)
 					{
-						StartPlay(next);
-					});
+						// the fragment reached the end of the file: repeat it, do not advance
+						int again;
+						double from;
+						lock (_lock)
+						{
+							again = _index;
+							from = _auditionStart;
+						}
+						Post(delegate
+						{
+							StartPlayAt(again, from);
+						});
+					}
+					else
+					{
+						int next = NextPosition(manual: false);
+						Post(delegate
+						{
+							StartPlay(next);
+						});
+					}
 				}
 				else
 				{
@@ -1362,6 +1396,8 @@ public sealed class Engine : IDisposable
 				LyricsEnabled = _lyricsEnabled,
 				Automix = _automix,
 				Seeking = _seeking,
+				Audition = _audition,
+				LyricRows = new List<LyricLine>(_lyricsRows),
 				SeekReady = (Player != null && Player.Active && !Player.AwaitingPlay && num2 > 0.0 && !_seeking),
 				Lists = new List<Playlist>(_lists),
 				Recommended = new List<Playlist>(_recommended),
@@ -2725,6 +2761,7 @@ public sealed class Engine : IDisposable
 			DelegateTrack(index);
 			return;
 		}
+		StopAudition(restorePause: false);
 		StartPlayAt(index, 0.0);
 	}
 
@@ -3201,6 +3238,7 @@ public sealed class Engine : IDisposable
 			SendCommand("next");
 			return;
 		}
+		StopAudition(restorePause: false);
 		Post(delegate
 		{
 			StartPlayAt(NextPosition(manual: true), 0.0);
@@ -3214,6 +3252,7 @@ public sealed class Engine : IDisposable
 			SendCommand("prev");
 			return;
 		}
+		StopAudition(restorePause: false);
 		Post(delegate
 		{
 			int index;
@@ -3240,6 +3279,7 @@ public sealed class Engine : IDisposable
 			SendCommand("toggle");
 			return;
 		}
+		StopAudition(restorePause: false);
 		bool cancel = false;
 		double position = 0.0;
 		lock (_lock)
@@ -3298,6 +3338,7 @@ public sealed class Engine : IDisposable
 			return;
 		}
 		ResetMix();
+		StopAudition(restorePause: false);
 		lock (_lock)
 		{
 			if (_state != "playing" && _state != "paused")
@@ -3314,6 +3355,121 @@ public sealed class Engine : IDisposable
 					_seeking = true;
 				}
 			}
+		}
+	}
+
+	/// <summary>Repeat one lyric sentence so the listener can hear it again without hunting for
+	/// its start: the stream jumps back to the sentence's own first moment, for ninety seconds
+	/// or until they do something else.</summary>
+	public void Audition(double start, double end)
+	{
+		if (_lockedOut)
+		{
+			Dictionary<string, string> state = HelperState();
+			string listId = Value(state, "list_id");
+			if (!string.IsNullOrEmpty(listId))
+			{
+				SendCommand("audition " + listId + " " + Value(state, "index") + " " + Value(state, "seek_serial")
+					+ " " + Number(start) + " " + Number(end));
+			}
+			return;
+		}
+		ResetMix();
+		lock (_lock)
+		{
+			if (_state != "playing" && _state != "paused")
+			{
+				return;
+			}
+			double duration = TrackDuration();
+			if (duration <= 0.0)
+			{
+				return;
+			}
+			end = Math.Min(end, duration - 0.15);
+			if (end - start < 0.45)
+			{
+				// a fragment shorter than a syllable is not worth a decoder restart
+				return;
+			}
+			if (!Player.Seek(start))
+			{
+				return;
+			}
+			_seekSerial++;
+			_seeking = true;
+			_audition = true;
+			_auditionStart = start;
+			_auditionEnd = end;
+			_auditionPaused = _state == "paused";
+			_auditionUntil = DateTime.UtcNow.AddSeconds(90.0);
+		}
+	}
+
+	/// <summary>Stop repeating, and put the song back the way the listener had it.</summary>
+	public void StopAudition(bool restorePause = true)
+	{
+		bool paused;
+		lock (_lock)
+		{
+			if (!_audition)
+			{
+				return;
+			}
+			_audition = false;
+			paused = _auditionPaused;
+			_auditionPaused = false;
+		}
+		if (!restorePause || !paused || Player == null || !Player.Active)
+		{
+			return;
+		}
+		if (Player.Pause(true))
+		{
+			lock (_lock)
+			{
+				_state = "paused";
+			}
+		}
+	}
+
+	/// <summary>Keep the sentence looping: the decoder does not know it is inside a fragment, so
+	/// the engine puts it back at the start each time it reaches the end.</summary>
+	private void CheckAudition()
+	{
+		if (!_audition)
+		{
+			return;
+		}
+		if (DateTime.UtcNow >= _auditionUntil)
+		{
+			StopAudition();
+			return;
+		}
+		if (Player == null || !Player.Active || Player.AwaitingPlay || Player.Status.State != "playing")
+		{
+			return;
+		}
+		if (Player.Status.Pos < _auditionEnd)
+		{
+			return;
+		}
+		if (Player.Seek(_auditionStart))
+		{
+			_seekSerial++;
+			_seeking = true;
+		}
+	}
+
+	/// <summary>Open or close the game's lyric window. The row is clamped rather than rejected:
+	/// a window at the end of the song still has something to show.</summary>
+	public void LyricWindow(int? center)
+	{
+		lock (_lock)
+		{
+			_lyricWindow = (!center.HasValue || _lyricsRows.Count == 0)
+				? (int?)null
+				: Math.Max(0, Math.Min(center.Value, _lyricsRows.Count - 1));
 		}
 	}
 
@@ -3342,6 +3498,7 @@ public sealed class Engine : IDisposable
 			return;
 		}
 		ResetMix();
+		StopAudition(restorePause: false);
 		if (Player != null)
 		{
 			Player.Close();
@@ -3750,6 +3907,7 @@ public sealed class Engine : IDisposable
 		string blocked;
 		double offset;
 		string recovery;
+		int? lyricWindow;
 		Dictionary<string, string> dictionary;
 		Dictionary<string, string> dictionary2;
 		Dictionary<string, string> dictionary3;
@@ -3804,6 +3962,7 @@ public sealed class Engine : IDisposable
 			blocked = _blocked;
 			offset = _lyricOffset;
 			recovery = _recovery;
+			lyricWindow = _lyricWindow;
 			dictionary = new Dictionary<string, string>(_recommendTiles, StringComparer.Ordinal);
 			dictionary2 = new Dictionary<string, string>(_recommendKeys, StringComparer.Ordinal);
 			dictionary3 = new Dictionary<string, string>(_listTiles, StringComparer.Ordinal);
@@ -3898,6 +4057,7 @@ public sealed class Engine : IDisposable
 			"lyric_offset=" + offset.ToString("0", CultureInfo.InvariantCulture),
 			"seek_ready=" + (flag ? 1 : 0),
 			"seek_serial=" + _seekSerial,
+			"audition=" + (_audition ? 1 : 0),
 			"lyrics_on=" + (lyricsEnabled ? 1 : 0),
 			"quality=" + quality,
 			"automix=" + (automix ? 1 : 0),
@@ -3931,6 +4091,18 @@ public sealed class Engine : IDisposable
 				}
 				list8.Add("lyric_context=" + offset2 + "\t" + Util.Clean(list7[row].Text) + "\t" + Util.Clean(list7[row].Translation));
 				list8.Add("lyric_context_at=" + offset2 + "\t" + list7[row].At.ToString("0.000", CultureInfo.InvariantCulture));
+			}
+		}
+		if (lyricWindow.HasValue && list7.Count > 0)
+		{
+			// the game's own lyric window: nine rows around the one it asked for, so it can
+			// scroll without another round trip
+			int center = Math.Max(0, Math.Min(lyricWindow.Value, list7.Count - 1));
+			list8.Add("lyric_window_center=" + center);
+			for (int row2 = Math.Max(0, center - 4); row2 < Math.Min(list7.Count, center + 5); row2++)
+			{
+				list8.Add("lyric_window_row=" + row2 + "\t" + list7[row2].At.ToString("0.000", CultureInfo.InvariantCulture)
+					+ "\t" + Util.Clean(list7[row2].Text) + "\t" + Util.Clean(list7[row2].Translation));
 			}
 		}
 		if (lyricsEnabled && string.IsNullOrEmpty(blocked))
@@ -4365,6 +4537,14 @@ public sealed class Engine : IDisposable
 		case 8:
 			switch (text2[0])
 			{
+			case 'a':
+				if (text2 == "audition" && SeekFields(value, 5, out var auditionFields)
+					&& double.TryParse(auditionFields[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var from)
+					&& double.TryParse(auditionFields[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var to))
+				{
+					Audition(from, to);
+				}
+				break;
 			case 'l':
 				if (text2 == "list_art")
 				{
@@ -4471,13 +4651,10 @@ public sealed class Engine : IDisposable
 				}
 				break;
 			case 'k':
-				if (text2 == "seek")
+				if (text2 == "seek" && SeekFields(value, 4, out var seekFields)
+					&& double.TryParse(seekFields[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var result4))
 				{
-					string[] array = value.Split(' ');
-					if (array.Length == 4 && array[0] == _currentListId && array[1] == (_index + 1).ToString(CultureInfo.InvariantCulture) && array[2] == _seekSerial.ToString(CultureInfo.InvariantCulture) && double.TryParse(array[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var result4))
-					{
-						Seek(result4);
-					}
+					Seek(result4);
 				}
 				break;
 			case 'p':
@@ -4526,6 +4703,17 @@ public sealed class Engine : IDisposable
 				{
 					PodcastMore(value.Substring(0, num5), value.Substring(num5 + 1).Trim());
 				}
+			}
+			else if (text2 == "lyric_window" && SeekFields(value, 4, out var windowFields)
+				&& int.TryParse(windowFields[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var row))
+			{
+				LyricWindow(row);
+			}
+			break;
+		case 18:
+			if (text2 == "lyric_window_close")
+			{
+				LyricWindow(null);
 			}
 			break;
 		case 16:
@@ -4591,8 +4779,24 @@ public sealed class Engine : IDisposable
 			}
 			break;
 		case 13:
+			if (text2 == "audition_stop")
+			{
+				StopAudition();
+			}
 			break;
 		}
+	}
+
+	/// <summary>The game echoes the list, the row and the seek serial it was shown. A command that
+	/// does not match all three came from a track the listener has already left, so it is dropped
+	/// rather than applied to whatever is playing now.</summary>
+	private bool SeekFields(string value, int count, out string[] fields)
+	{
+		fields = value.Split(new char[2] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+		return fields.Length == count
+			&& fields[0] == _currentListId
+			&& fields[1] == (_index + 1).ToString(CultureInfo.InvariantCulture)
+			&& fields[2] == _seekSerial.ToString(CultureInfo.InvariantCulture);
 	}
 
 	private static byte[] Hex(string text)
