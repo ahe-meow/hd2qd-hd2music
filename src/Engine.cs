@@ -70,8 +70,6 @@ public sealed class Engine : IDisposable
 
 	public static readonly string[] Orders = new string[3] { "order", "shuffle", "repeat" };
 
-	public const string WaitingForGame = "请先进入游戏并启用新版播放器";
-
 	public readonly string Root;
 
 	public string FfmpegPath;
@@ -1214,7 +1212,7 @@ public sealed class Engine : IDisposable
 			+ " pid=" + Player.GameWatch.Pid.ToString(CultureInfo.InvariantCulture)
 			+ " beat=" + (Player.GameWatch.Beat ? "yes" : "no")
 			+ " handed=" + ((hub != null && hub.Handshaked) ? "yes" : "no")
-			+ " token=" + ((Player.GameWatch.Token != null) ? "yes" : "no")
+			+ " game=" + ((Player.GameWatch.Pid > 0) ? "yes" : "no")
 			+ " state=" + state
 			+ ((hub != null && hub.Note != null) ? (" hub=" + hub.Note) : ""));
 	}
@@ -1247,7 +1245,6 @@ public sealed class Engine : IDisposable
 		}
 		MixTick();
 		PollLogin();
-		CheckGame(prompt: false);
 		AdvanceBlocked();
 		CheckAudition();
 		if (Player != null)
@@ -1494,58 +1491,6 @@ public sealed class Engine : IDisposable
 		}
 	}
 
-	private bool CheckGame(bool prompt)
-	{
-		if (Player == null)
-		{
-			return false;
-		}
-		if (Player.GameWatch.Token != null)
-		{
-			return true;
-		}
-		if (Player.Active || _state == "loading" || _state == "playing" || _state == "paused" || _state == "buffering")
-		{
-			Player.Close();
-			lock (_lock)
-			{
-				_state = "idle";
-				_seeking = false;
-				_resumePosition = null;
-				_resumeAttempts = 0;
-				_lyricsRows.Clear();
-			}
-		}
-		if (prompt)
-		{
-			lock (_lock)
-			{
-				_notice = NotReadyNotice();
-			}
-		}
-		return false;
-	}
-
-	/// <summary>
-	/// All three ways of being unplayable used to print the same sentence, which sent a user
-	/// whose game was already running looking for a problem that was not there. Name them.
-	/// </summary>
-	private string NotReadyNotice()
-	{
-		if (Player.GameWatch.Pid <= 0)
-		{
-			return WaitingForGame;
-		}
-		DataHub hub = _dataHub;
-		if (hub == null || !hub.Handshaked)
-		{
-			return "游戏已启动，但模组没有向插件请求播放器（请确认 HD2 Music 已在游戏中启用）";
-		}
-		// it took our payload but never came back: the mod's own loader gave up, and its
-		// reason is only visible from inside the game
-		return (hub.Note == null) ? "播放器资源已交付，游戏内主体尚未就绪（模组加载失败）" : hub.Note;
-	}
-
 	public UiState Snapshot()
 	{
 		lock (_lock)
@@ -1561,7 +1506,7 @@ public sealed class Engine : IDisposable
 			{
 				Account = _account,
 				Notice = _notice,
-				GameRunning = Player != null && Player.GameWatch != null && Player.GameWatch.Token != null,
+				GameRunning = Player != null && Player.GameWatch != null && Player.GameWatch.Pid > 0,
 				State = _state,
 				Title = ((track != null) ? track.Title : ""),
 				Artist = ((track != null) ? track.Artist : ""),
@@ -2986,10 +2931,6 @@ public sealed class Engine : IDisposable
 			return;
 		}
 		ResetMix();
-		if (!CheckGame(prompt: true))
-		{
-			return;
-		}
 		Track track;
 		object token;
 		lock (_lock)
@@ -3002,12 +2943,6 @@ public sealed class Engine : IDisposable
 			}
 			track = _queueTracks[index];
 			token = Player.GameWatch.Token;
-			if (token == null)
-			{
-				_state = "idle";
-				_notice = "请先进入游戏并启用新版播放器";
-				return;
-			}
 			RecordPosition(index);
 			_index = index;
 			_state = "loading";
@@ -3041,7 +2976,7 @@ public sealed class Engine : IDisposable
 			lock (_lock)
 			{
 				_state = "idle";
-				_notice = "请先进入游戏并启用新版播放器";
+				_notice = "播放已取消";
 				return;
 			}
 		}
@@ -4290,7 +4225,7 @@ public sealed class Engine : IDisposable
 			"lyric_translation=" + Util.Clean(value6),
 			// the helper prints its session verdict here on every frame; the mod's diagnostics
 			// page shows it, and anything but "verified" reads as "not ready"
-			"deployment=" + ((Player.GameWatch.Token != null) ? "verified" : "waiting"),
+			"deployment=" + ((Player.GameWatch.Beat || (_dataHub != null && _dataHub.Handshaked)) ? "verified" : "waiting"),
 			"lyric_at=" + ((index >= 0 && index < list7.Count) ? list7[index].At.ToString("0.000", CultureInfo.InvariantCulture) : ""),
 			"lyric_total=" + list7.Count.ToString(CultureInfo.InvariantCulture),
 			"diagnostic_recovery=" + Util.Clean(recovery),
@@ -4451,7 +4386,7 @@ public sealed class Engine : IDisposable
 			list.Add("lock_holder=" + ((_lockHolder > 0) ? (_lockHolder.ToString(CultureInfo.InvariantCulture) + " " + HolderName(_lockHolder)) : "-"));
 			DataHub hub = _dataHub;
 			list.Add("hub_handshaked=" + ((hub != null && hub.Handshaked) ? "yes" : "no") + " hub_note=" + ((hub != null && hub.Note != null) ? hub.Note : "-"));
-			list.Add("game_pid=" + Player.GameWatch.Pid.ToString(CultureInfo.InvariantCulture) + " heartbeat=" + (Player.GameWatch.Beat ? "yes" : "no") + " token=" + ((Player.GameWatch.Token != null) ? "yes" : "no"));
+			list.Add("game_pid=" + Player.GameWatch.Pid.ToString(CultureInfo.InvariantCulture) + " heartbeat=" + (Player.GameWatch.Beat ? "yes" : "no") + " game=" + ((Player.GameWatch.Pid > 0) ? "yes" : "no") + " playback_token=stable");
 			list.Add("log=" + Path.Combine(Root, "ncm_plugin.log"));
 			list.Add("state=" + _state + " notice=" + _notice);
 			list.Add("list=" + _currentList + " (" + _currentListId + ")");

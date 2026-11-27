@@ -9,13 +9,14 @@ public sealed class GameWatch
 {
 	private readonly string _heartbeat;
 
-	private readonly Action _stopOnChange;
-
 	private readonly Thread _worker;
 
 	private readonly ManualResetEventSlim _stopped = new ManualResetEventSlim(initialState: false);
 
-	private volatile object _token;
+	// One token for the life of the plugin, not for the life of a game session. StreamPlayer
+	// uses it as a generation marker, so tying it to the game made playback impossible without
+	// the game and killed the song the moment the game closed.
+	private volatile object _token = new object();
 
 	private int _pid;
 
@@ -62,7 +63,6 @@ public sealed class GameWatch
 	public GameWatch(string heartbeat, Action stopOnChange)
 	{
 		_heartbeat = heartbeat;
-		_stopOnChange = stopOnChange;
 		_worker = new Thread(Run)
 		{
 			IsBackground = true,
@@ -117,10 +117,6 @@ public sealed class GameWatch
 	{
 		if (_forced)
 		{
-			if (_token == null)
-			{
-				_token = new object();
-			}
 			return;
 		}
 		int? num = GamePid();
@@ -144,23 +140,10 @@ public sealed class GameWatch
 		long age = num3 - _stamp;
 		// a 1.2.4-era body ships inside the patch and beats on its own; a 1.2.6+ body only
 		// exists after we answer the handshake, so that handshake is the proof, not the beat
-		bool beat = num2.GetValueOrDefault() != 0L && !(-1 > age || age >= 5);
-		_beat = beat;
-		bool handed = _modern && num.HasValue;
-		object obj2 = ((!num.HasValue || (!beat && !handed)) ? null : ((_token != null && num.Value == _pid) ? _token : new object()));
+		_beat = num2.GetValueOrDefault() != 0L && !(-1 > age || age >= 5);
+		// still watch the game for the HUD and the diagnostics, but never touch the token:
+		// playback must survive the game closing, so there is nothing here to stop
 		_pid = num.GetValueOrDefault();
-		if (obj2 == _token)
-		{
-			return;
-		}
-		_token = obj2;
-		try
-		{
-			_stopOnChange();
-		}
-		catch
-		{
-		}
 	}
 
 	private static int? GamePid()

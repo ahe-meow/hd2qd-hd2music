@@ -74,6 +74,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckReferences(asm);
             CheckText(asm, plugin);
             CheckQr(asm);
+            CheckPlaybackWithoutGame(asm);
             CheckDataHub(asm);
             CheckFfmpeg(asm);
             CheckBrowseApi(asm);
@@ -301,6 +302,30 @@ namespace Hd2Qd.HD2Music.Verify
                 Exception inner = e is TargetInvocationException tie ? tie.InnerException : e;
                 Fail("the QR encoder does not run: " + inner.Message);
             }
+        }
+
+        /// <summary>
+        /// The watcher used to clear its token whenever the game was absent, which made
+        /// StreamPlayer.Start reject every track and made the state loop kill the song. A
+        /// stopped heartbeat is the fixture: no game can be running with "0" in that file.
+        /// </summary>
+        static void CheckPlaybackWithoutGame(Assembly asm)
+        {
+            Type watch = asm.GetType("Hd2Qd.HD2Music.GameWatch", true);
+            string heartbeat = Path.Combine(Path.GetTempPath(), "hd2qd-nogame-heartbeat.txt");
+            File.WriteAllText(heartbeat, "0\n");
+            object instance = Activator.CreateInstance(watch, heartbeat, (Action)delegate { });
+            PropertyInfo token = watch.GetProperty("Token");
+            MethodInfo sample = watch.GetMethod("Sample");
+            sample.Invoke(instance, null);
+            object first = token.GetValue(instance);
+            sample.Invoke(instance, null);
+            if (first == null || first != token.GetValue(instance))
+            {
+                Fail("playback must not depend on a running game (stable GameWatch.Token with a stopped heartbeat)");
+                return;
+            }
+            Pass("playback token survives a stopped heartbeat: music works outside the game");
         }
 
         static void CheckDataHub(Assembly asm)
