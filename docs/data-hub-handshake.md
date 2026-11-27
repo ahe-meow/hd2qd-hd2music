@@ -229,3 +229,30 @@ locked_out=yes
 **已证**：`.analysis/lockcheck` 打桩——对手占住 byte 0 时 `acquired=False`，放手后同一实例 `acquired=True`，`ncm_plugin_owner.txt` 写出。
 
 **仍未确定**：模组主体为什么不加载。02:31:46 交付成功仍无心跳，说明卡在模组自身的 `_cd1 → _65e → _6b4 → _b15` 链上（第九节末段），与锁无关。下一次复测先看 `ncm_plugin.log` 里 `handed=yes` 与 `beat=no` 是否同时出现：同时出现即主体没起来，属模组侧；若 `locked_out=yes` 反复出现，则是还有第二个实例在抢。
+
+## 十一、交付已证清白，卡点在模组加载器（2026-11-28 第三次实测，1.7.3 日志）
+
+`ncm_plugin.log`（1.7.3 首次带日志运行，02:43:58 起，02:45:01 那次开局）：
+
+```
+02:43:58 start version=1.7.3.0 locked_out=no holder=-
+02:43:58 tick locked_out=no pid=0     beat=no handed=no  token=no  hub=找不到模组主体…
+02:44:18 tick locked_out=no pid=46576 beat=no handed=yes token=yes
+02:48:11 tick locked_out=no pid=46576 beat=no handed=yes token=yes state=playing
+```
+
+24 条 tick，`locked_out=no` 全程、`handed=yes` 从第一帧起、`beat=no` **一条都没有例外**。即：锁没问题、交付成功、模组主体从未写过心跳。
+
+**交叉验证过的三件事**：
+
+1. 载荷正确。`Known` 表的两条摘要就是从 1.2.6/1.2.7 正式版包内层 `.stream` 核出来的，重新读包结果一致：1.2.6 = 154 907、1.2.7 = 166 097，1.2.3/1.2.4/1.2.5 = **0（主体内嵌）**。交付的 166 097 字节 sha256 命中 1.2.7。
+2. 载荷能被模组自己的解码器接受（`_72b()` 42 条目、尾部长度自洽）；`_cd1()` 需要的两段字模（`尖`/`糖`）在 1.2.7 的 `font_masks` 里都在。
+3. 主体曾经活过。`ncm_game_alive.txt` 的内容 `0`、mtime 02:09:23 —— `0` 只有主体的 `on_disable` 会写（`online.heartbeat(true)`）。那属于 01:53:29 那次开局，02:09:23 随游戏退出。
+
+**所以 01:53 那次会话主体是加载成功的**；02:11:53 之后同一个部署（`data/9ba626afa44a3aa3.patch_90` 与 `.stream` 的 mtime 停在 11-27 19:56，02:10:40 那次 `add --replace` 只是重新硬链）、同一个插件、同一份载荷，主体再没出现。02:10:40 是唯一变量。
+
+**为什么是模组侧**：握手只是把 `data.dat` 交给壳，壳后面还要 `_cd1()`（派生密钥）→ `_65e()`（每帧 12×64 B 滚动解密）→ `_6b4()`（解压）→ `_b15()`（`loadstring`）。`_b15` 用 `pcall` 包着，**任何失败都只是 `_1d7 = true` 后静默退出**，不写日志、不报错。而 MDL3 3.0.0-dev.57 在 02:45 那次会话里刷了 14 次 `E_BUDGET`、9 次 `SYS_TOO_HEAVY`、4 次 `SYS_WATCH_FAILED`；`loadstring` 一帧读完整个主体在这种预算下被杀，正是「设置里没有入口、F7 无界面、对局无歌词」——入口和 UI 都由主体注册。
+
+**绕开办法（本轮验证过的路径）**：1.2.5 及更早的 `.stream` 是 0 字节，主体内嵌在 `patch_0` 里，**不经过 Data Hub、不经过 `loadstring`**，加载完直接读 `ncm_state.txt`、写 `ncm_game_alive.txt`。插件的状态契约就是按 1.2.4 明文源码写的（`mod-reverse-1.2.4.md`），这条路径是插件最熟的一条。可取出的现成包：`qd-plugins/HD2 Music 1.2.5 - Arsenal.zip`（内层 `9ba626…patch_0` 12 683 104 B、`.stream` 0）。
+
+**1.7.4 的加固**：`start.dat` 超过 120 秒没有刷新就当作上一局的残留，不再回答。换回旧版后，1.2.7 留下的那份请求不会被误答成 `handed=yes`（那样会让 `token` 凭一个没人等待的握手成立）。
