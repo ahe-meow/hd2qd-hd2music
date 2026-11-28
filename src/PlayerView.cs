@@ -492,7 +492,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.9.4 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.9.5 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -2386,7 +2386,8 @@ namespace Hd2Qd.HD2Music
             _detailTracks.Items.Clear();
             foreach (Track track in shown)
             {
-                Grid row = new Grid();
+                Grid row = new Grid { Cursor = Cursors.Hand };
+                row.MouseLeftButtonUp += delegate { _engine.PlayPreviewTrack(track); };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(92.0) });
@@ -2420,6 +2421,8 @@ namespace Hd2Qd.HD2Music
                 add.Padding = new Thickness(8.0, 0.0, 8.0, 0.0);
                 add.HorizontalAlignment = HorizontalAlignment.Right;
                 add.Margin = new Thickness(0.0, 0.0, 8.0, 0.0);
+                // the button's own action must not also trigger the row's play-on-click
+                add.MouseLeftButtonUp += delegate(object sender, MouseButtonEventArgs e) { e.Handled = true; };
                 Grid.SetColumn(add, 2);
                 row.Children.Add(add);
                 _detailTracks.Items.Add(ReadyRow(new ListBoxItem { Content = row }));
@@ -2668,12 +2671,14 @@ namespace Hd2Qd.HD2Music
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70.0) });
             TextBlock number = Mono(current ? "▶" : (index + 1).ToString("00"), 9.0, current ? Theme.Yellow : Theme.Muted);
             number.VerticalAlignment = VerticalAlignment.Center;
+            number.LineHeight = 16.0;
             row.Children.Add(number);
             StackPanel words = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             words.Children.Add(new TextBlock
             {
                 Text = track.Title,
                 FontSize = 12.0,
+                LineHeight = 16.0,
                 FontWeight = current ? FontWeights.SemiBold : FontWeights.Normal,
                 Foreground = current ? Theme.Yellow : Theme.Ink,
                 TextTrimming = TextTrimming.CharacterEllipsis
@@ -2682,6 +2687,7 @@ namespace Hd2Qd.HD2Music
             {
                 Text = track.Artist,
                 FontSize = 9.5,
+                LineHeight = 16.0,
                 Foreground = Theme.Muted,
                 TextTrimming = TextTrimming.CharacterEllipsis
             });
@@ -2690,6 +2696,7 @@ namespace Hd2Qd.HD2Music
             TextBlock length = Mono(Util.FormatTime(track.Duration), 9.0, Theme.Muted);
             length.TextAlignment = TextAlignment.Right;
             length.VerticalAlignment = VerticalAlignment.Center;
+            length.LineHeight = 16.0;
             Grid.SetColumn(length, 2);
             row.Children.Add(length);
             // the column is reserved even when it stays empty, or the length column would
@@ -2714,7 +2721,9 @@ namespace Hd2Qd.HD2Music
             {
                 row.MouseLeftButtonUp += delegate { play(); };
             }
-            return new ListBoxItem { Tag = index, Content = row };
+            // a fixed row box: switching the current row to SemiBold must not change its
+            // height and shift every row below it
+            return new ListBoxItem { Tag = index, Content = row, Height = 46.0, MinHeight = 46.0 };
         }
 
         /// <summary>A footer button that only appears when the service says there is another page:

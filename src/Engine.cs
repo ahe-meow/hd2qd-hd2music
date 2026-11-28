@@ -1281,21 +1281,8 @@ public sealed class Engine : IDisposable
 		}
 		MixTick();
 		PollLogin();
-		// radio/get returns only a handful of tracks, so refill while the last one is still
-		// playing; waiting for the queue to run dry made FM look like a three-song playlist
-		if (_currentListId == "fm" && !_fmRefilling)
-		{
-			int remaining;
-			lock (_lock)
-			{
-				remaining = _queueTracks.Count - 1 - _index;
-			}
-			if (remaining <= 1)
-			{
-				// RefillFm owns the in-flight flag; setting it here would make it return early
-				Post(delegate { RefillFm(false, false); });
-			}
-		}
+		// FM refills only when the queue is exhausted. Trying to top up early changed the
+		// queue while the second-to-last song was still pending and made Next skip it.
 		AdvanceBlocked();
 		CheckAudition();
 		if (Player != null)
@@ -2105,6 +2092,39 @@ public sealed class Engine : IDisposable
 			_notice = "";
 		}
 		StartPlay(0);
+	}
+
+	/// <summary>Play a song from the playlist being browsed, with the rest of that list
+	/// queued after it. Clicking a row in a playlist means "play this song".</summary>
+	public void PlayPreviewTrack(Track track)
+	{
+		if (track == null)
+		{
+			return;
+		}
+		int at;
+		lock (_lock)
+		{
+			List<Track> copy = new List<Track>(_previewTracks);
+			at = copy.FindIndex(t => string.Equals(t.Id, track.Id, StringComparison.Ordinal));
+			if (at < 0)
+			{
+				copy.Clear();
+				copy.Add(track);
+				at = 0;
+			}
+			_queueTracks.Clear();
+			_queueTracks.AddRange(copy);
+			_queueRevision++;
+			_currentList = _previewName;
+			_currentListId = _previewId;
+			_trackFirst = Math.Max(1, at + 1);
+			_index = -1;
+			_priorityNext = null;
+			_state = "idle";
+			_notice = "";
+		}
+		StartPlay(at);
 	}
 
 	public void AddTrackToQueue(Track track)
@@ -3110,6 +3130,10 @@ public sealed class Engine : IDisposable
 				return;
 			}
 			_fmLastFetch = DateTime.UtcNow;
+			lock (_lock)
+			{
+				Util.Log("fm refill at idx=" + _index + " of " + _queueTracks.Count);
+			}
 			Util.Log("fm refill requested play=" + playImmediately);
 			// a background top-up must not repaint the console: the song is still playing
 			if (playImmediately)
@@ -3194,6 +3218,7 @@ public sealed class Engine : IDisposable
 			{
 				if (_currentListId == "fm" && !_fmRefilling)
 				{
+					Util.Log("fm exhausted at " + index + " of " + _queueTracks.Count);
 					RefillFm(keepResumeAttempts);
 					return;
 				}
@@ -3709,8 +3734,10 @@ public sealed class Engine : IDisposable
 					return;
 				}
 				// a restored paused session has no decoder: pressing Play starts it at the
-				// saved position instead of silently switching the label
+				// saved position, and the transport must flip on this click, not when the
+				// decoder eventually reports ready
 				position = _resumePosition.GetValueOrDefault();
+				_state = "playing";
 			}
 			else if (_state == "buffering" && _resumePosition.HasValue)
 			{

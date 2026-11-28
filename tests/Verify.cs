@@ -387,7 +387,7 @@ namespace Hd2Qd.HD2Music.Verify
                 return;
             }
             Type engine = asm.GetType("Hd2Qd.HD2Music.Engine", true);
-            foreach (string method in new[] { "PreviewPlaylist", "PlayPreview", "AddTrackToQueue", "PlayNextTrack" })
+            foreach (string method in new[] { "PreviewPlaylist", "PlayPreview", "PlayPreviewTrack", "AddTrackToQueue", "PlayNextTrack" })
             {
                 if (engine.GetMethod(method, BindingFlags.Instance | BindingFlags.Public) == null)
                 {
