@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Reflection;
 using System.Windows;
@@ -109,8 +110,13 @@ namespace Hd2Qd.HD2Music
             }
             else if (node is Button button && button.Content is string buttonText)
             {
-                button.Content = Text(buttonText);
-                Readable(button, buttonText);
+                // the transport's label is owned by UpdatePlayButton; a second pass here
+                // could translate "暂停"/"播放" again and fight the click handler
+                if (!string.Equals(button.Tag as string, "transport", StringComparison.Ordinal))
+                {
+                    button.Content = Text(buttonText);
+                    Readable(button, buttonText);
+                }
                 if (button.ToolTip is string tip) button.ToolTip = Text(tip);
             }
             else if (node is CheckBox check && check.Content is string checkText)
