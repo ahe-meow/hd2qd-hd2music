@@ -214,6 +214,11 @@ public sealed class Engine : IDisposable
 	// time and the queue has to be refilled as it runs out. This guards against double fetches.
 	private volatile bool _fmRefilling;
 
+	// radio/get answers 405 when a client hammers it. One fetch per interval, no exceptions.
+	private DateTime _fmLastFetch = DateTime.MinValue;
+
+	const double FmFetchIntervalSeconds = 12.0;
+
 	private DateTime _nextQueueSave;
 
 	private readonly List<Track> _searchResults = new List<Track>();
@@ -819,6 +824,17 @@ public sealed class Engine : IDisposable
 		{
 			if (Player != null)
 			{
+				// closing a session parks the transport: reopening restores the queue but
+				// never starts audio by itself
+				if (Player.Active && _state == "playing")
+				{
+					Player.Pause(true);
+					lock (_lock)
+					{
+						_state = "paused";
+					}
+				}
+				SaveQueue();
 				Player.GameWatch.Close();
 				Player.Close();
 			}
@@ -1276,7 +1292,7 @@ public sealed class Engine : IDisposable
 			}
 			if (remaining <= 1)
 			{
-				_fmRefilling = true;
+				// RefillFm owns the in-flight flag; setting it here would make it return early
 				Post(delegate { RefillFm(false, false); });
 			}
 		}
@@ -1395,11 +1411,13 @@ public sealed class Engine : IDisposable
 			{
 				Player.SetVolume(saved.Volume);
 			}
-			double resume = saved.Pos;
-			int restored = _index;
-			if (restored >= 0 && resume > 0.0)
+			// keep the position for the next Play press; opening the manager must not start
+			// audio on its own
+			_resumePosition = saved.Pos;
+			lock (_lock)
 			{
-				Post(delegate { StartPlayAt(restored, resume, keepResumeAttempts: true); });
+				_state = "paused";
+				_notice = "已恢复上次的播放列表，点播放继续";
 			}
 			_queueSignature = QueueKey();
 		}
@@ -3077,61 +3095,79 @@ public sealed class Engine : IDisposable
 	/// </summary>
 	void RefillFm(bool keepResumeAttempts, bool playImmediately = true)
 	{
-		_fmRefilling = true;
-		Util.Log("fm refill requested keep=" + keepResumeAttempts + " play=" + playImmediately);
-		lock (_lock)
+		if (_fmRefilling)
 		{
-			_state = "loading";
-			_notice = "正在获取私人 FM…";
+			return;
 		}
-		List<Track> fresh = null;
+		_fmRefilling = true;
 		try
 		{
-			fresh = Api.PersonalizedTracks("fm", Api.Session.Cookies);
-		}
-		catch (Exception ex)
-		{
+			// several Next clicks and the proactive check can queue up together; one fetch
+			// serves all of them. Hammering radio/get earns a 405 and freezes the console.
+			if ((DateTime.UtcNow - _fmLastFetch).TotalSeconds < FmFetchIntervalSeconds)
+			{
+				Util.Log("fm refill skipped: within interval");
+				return;
+			}
+			_fmLastFetch = DateTime.UtcNow;
+			Util.Log("fm refill requested play=" + playImmediately);
 			lock (_lock)
 			{
-				_notice = "获取失败：" + ex.Message;
+				_state = "loading";
+				_notice = "正在获取私人 FM…";
 			}
-		}
-		int first = -1;
-		lock (_lock)
-		{
-			if (fresh != null && fresh.Count > 0)
+			List<Track> fresh = null;
+			try
 			{
-				int keep = Math.Min(20, Math.Max(0, _queueTracks.Count - 1));
-				List<Track> tail = _queueTracks.GetRange(_queueTracks.Count - keep, keep);
-				first = tail.Count;
-				_queueTracks.Clear();
-				_queueTracks.AddRange(tail);
-				_queueTracks.AddRange(fresh);
-				_queueRevision++;
-				_currentListId = "fm";
-				_currentList = "私人 FM";
-				_trackFirst = 1;
-				_priorityNext = null;
-				_shuffleNext = null;
+				fresh = Api.PersonalizedTracks("fm", Api.Session.Cookies);
 			}
-			_fmRefilling = false;
-		}
-		Util.Log("fm refill got " + (first < 0 ? 0 : fresh.Count) + " tracks, play=" + playImmediately);
-		if (first < 0)
-		{
-			if (playImmediately)
+			catch (Exception ex)
 			{
 				lock (_lock)
 				{
-					_state = "finished";
-					_notice = "暂时无法获取歌曲，请稍后重试";
+					_notice = "获取失败：" + ex.Message;
 				}
 			}
-			return;
+			int first = -1;
+			lock (_lock)
+			{
+				if (fresh != null && fresh.Count > 0)
+				{
+					int keep = Math.Min(20, Math.Max(0, _queueTracks.Count - 1));
+					List<Track> tail = _queueTracks.GetRange(_queueTracks.Count - keep, keep);
+					first = tail.Count;
+					_queueTracks.Clear();
+					_queueTracks.AddRange(tail);
+					_queueTracks.AddRange(fresh);
+					_queueRevision++;
+					_currentListId = "fm";
+					_currentList = "私人 FM";
+					_trackFirst = 1;
+					_priorityNext = null;
+					_shuffleNext = null;
+				}
+			}
+			Util.Log("fm refill got " + (fresh == null ? 0 : fresh.Count) + " tracks");
+			if (first < 0)
+			{
+				if (playImmediately)
+				{
+					lock (_lock)
+					{
+						_state = "finished";
+						_notice = "暂时无法获取歌曲，请稍后重试";
+					}
+				}
+				return;
+			}
+			if (playImmediately)
+			{
+				StartPlayAt(first, 0.0, keepResumeAttempts);
+			}
 		}
-		if (playImmediately)
+		finally
 		{
-			StartPlayAt(first, 0.0, keepResumeAttempts);
+			_fmRefilling = false;
 		}
 	}
 
@@ -3657,13 +3693,18 @@ public sealed class Engine : IDisposable
 			if (_state == "playing" || _state == "paused")
 			{
 				bool flag = _state == "playing";
-				Player.Pause(flag);
-				// the transport always follows the click. A player with no output yet cannot
-				// pause audio, but it must not leave the button saying 暂停 while paused.
-				_state = (flag ? "paused" : "playing");
-				return;
+				if (flag || (Player != null && Player.Active))
+				{
+					Player.Pause(flag);
+					// the transport follows the click even when there is no mixer to suspend
+					_state = (flag ? "paused" : "playing");
+					return;
+				}
+				// a restored paused session has no decoder: pressing Play starts it at the
+				// saved position instead of silently switching the label
+				position = _resumePosition.GetValueOrDefault();
 			}
-			if (_state == "buffering" && _resumePosition.HasValue)
+			else if (_state == "buffering" && _resumePosition.HasValue)
 			{
 				// the user wants the retries to stop, not another attempt at them
 				cancel = true;

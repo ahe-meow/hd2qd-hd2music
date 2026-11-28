@@ -369,7 +369,13 @@ namespace Hd2Qd.HD2Music.Verify
                 Fail("private FM has no refill path");
                 return;
             }
-            Pass("private FM refills its queue instead of stopping after one track");
+            // radio/get returns 405 when hammered, so the fetch must be rate-limited
+            if (engine.GetField("_fmLastFetch", BindingFlags.Instance | BindingFlags.NonPublic) == null)
+            {
+                Fail("private FM refill has no throttle");
+                return;
+            }
+            Pass("private FM refills its queue with a rate limit instead of stopping after one track");
         }
 
         static void CheckPlaylistBrowse(Assembly asm)

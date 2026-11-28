@@ -199,6 +199,9 @@ namespace Hd2Qd.HD2Music
 
             Content = root;
             ApplyLanguage();
+            // build and translate the dynamic rows before the first paint. Doing this only
+            // on the 300 ms tick made CJK rows grow from 9px to 12px right after loading.
+            Refresh();
 
             _tick = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300.0) };
             _tick.Tick += delegate { Refresh(); };
@@ -489,7 +492,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.9.1 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.9.2 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1093,7 +1096,7 @@ namespace Hd2Qd.HD2Music
             _libraryDetail.Children.Add(new Border
             {
                 Child = detailHead,
-                Padding = new Thickness(14.0, 0.0, 14.0, 0.0),
+                Padding = new Thickness(22.0, 0.0, 14.0, 0.0),
                 BorderBrush = Theme.Grid,
                 BorderThickness = new Thickness(0.0, 0.0, 0.0, 1.0)
             });
