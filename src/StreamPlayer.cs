@@ -19,7 +19,7 @@ public sealed class StreamPlayer
 
 	private sealed class NextTrack
 	{
-		public Process Process;
+		public PcmSource Process;
 
 		public string Url;
 
@@ -77,7 +77,7 @@ public sealed class StreamPlayer
 
 	public bool AwaitingPlay;
 
-	public Process Process;
+	public PcmSource Process;
 
 	public object PlaybackGame;
 
@@ -241,42 +241,15 @@ public sealed class StreamPlayer
 		return stringBuilder.ToString();
 	}
 
-	private Process Decoder(string url, double position)
+	/// <summary>Media Foundation decodes; ffmpeg.exe (Executable) only when it cannot open the
+	/// stream. Nothing connects on this thread.</summary>
+	private PcmSource Decoder(string url, double position)
 	{
-		ProcessStartInfo processStartInfo = new ProcessStartInfo(Executable)
-		{
-			UseShellExecute = false,
-			CreateNoWindow = true,
-			RedirectStandardOutput = true,
-			RedirectStandardError = true
-		};
-		StringBuilder stringBuilder = new StringBuilder();
-		stringBuilder.Append("-nostdin -hide_banner -loglevel error -protocol_whitelist http,https,tcp,tls,crypto,data ");
-		stringBuilder.Append("-rw_timeout 8000000 -reconnect 1 -reconnect_on_network_error 1 -reconnect_delay_max 2 ");
-		if (position > 0.0)
-		{
-			stringBuilder.Append("-ss ").Append(position.ToString("0.###", CultureInfo.InvariantCulture)).Append(' ');
-		}
-		stringBuilder.Append("-i \"").Append(url.Replace("\"", "\\\"")).Append("\" ");
-		stringBuilder.Append("-map 0:a:0 -ac 2 -ar ").Append(44100).Append(" -f s16le pipe:1");
-		processStartInfo.Arguments = stringBuilder.ToString();
-		Process process = new Process();
-		process.StartInfo = processStartInfo;
-		process.EnableRaisingEvents = false;
-		process.ErrorDataReceived += delegate
-		{
-		};
-		if (!process.Start())
-		{
-			throw new OSError("cannot start ffmpeg");
-		}
-		process.BeginErrorReadLine();
-		return process;
+		return PcmSource.Open(url, position, Executable);
 	}
 
-	private static byte[] ReadPcm(Process process, int count)
+	private static byte[] ReadPcm(PcmSource source, int count)
 	{
-		Stream baseStream = process.StandardOutput.BaseStream;
 		byte[] array = new byte[count];
 		int i;
 		int num;
@@ -284,7 +257,7 @@ public sealed class StreamPlayer
 		{
 			try
 			{
-				num = baseStream.Read(array, i, count - i);
+				num = source.Read(array, i, count - i);
 			}
 			catch
 			{
@@ -316,7 +289,7 @@ public sealed class StreamPlayer
 			{
 				return false;
 			}
-			Process decoder = Decoder(url, position);
+			PcmSource decoder = Decoder(url, position);
 			try
 			{
 				Close();
@@ -325,30 +298,7 @@ public sealed class StreamPlayer
 			{
 				if (Process != null || game != GameWatch.Token)
 				{
-					try
-					{
-						if (!decoder.HasExited)
-						{
-							decoder.Kill();
-						}
-					}
-					catch
-					{
-					}
-					try
-					{
-						decoder.WaitForExit(1000);
-					}
-					catch
-					{
-					}
-					try
-					{
-						decoder.StandardOutput.Close();
-					}
-					catch
-					{
-					}
+					decoder.Kill();
 				}
 			}
 			if (game != GameWatch.Token)
@@ -398,7 +348,7 @@ public sealed class StreamPlayer
 				{
 					return false;
 				}
-				Process process = Decoder(url, 0.0);
+				PcmSource process = Decoder(url, 0.0);
 				NextTrack next = new NextTrack
 				{
 					Process = process,
@@ -454,36 +404,13 @@ public sealed class StreamPlayer
 		{
 			return;
 		}
-		try
-		{
-			if (!prefetch.Process.HasExited)
-			{
-				prefetch.Process.Kill();
-			}
-		}
-		catch
-		{
-		}
-		try
-		{
-			prefetch.Process.WaitForExit(3000);
-		}
-		catch
-		{
-		}
+		prefetch.Process.Kill();
 		try
 		{
 			if (prefetch.Reader != null)
 			{
 				prefetch.Reader.Join(1000);
 			}
-		}
-		catch
-		{
-		}
-		try
-		{
-			prefetch.Process.StandardOutput.Close();
 		}
 		catch
 		{
@@ -501,7 +428,7 @@ public sealed class StreamPlayer
 		}
 	}
 
-	private void PlayPcm(Process decoder, bool paused)
+	private void PlayPcm(PcmSource decoder, bool paused)
 	{
 		int value = 1;
 		byte[] array = new byte[0];
@@ -531,7 +458,7 @@ public sealed class StreamPlayer
 				{
 					// A CDN often closes the connection with a non-zero code at EOF. Once the
 					// decoded audio has reached the track's end, that is a normal finish.
-					flag = decoder.WaitForExit(1000) && (num2 <= 0.0 || num >= num2 - Math.Max(1.5, Math.Min(5.0, num2 * 0.025)));
+					flag = decoder.WaitForEnd(1000) && (num2 <= 0.0 || num >= num2 - Math.Max(1.5, Math.Min(5.0, num2 * 0.025)));
 					lock (_lock)
 					{
 						NextTrack nextTrack = ((flag && _transition == null && !_halt.IsSet) ? _prefetch : null);
@@ -549,13 +476,7 @@ public sealed class StreamPlayer
 								Duration = num2
 							};
 							EnqueuePcmLocked(secondPart, paused);
-							try
-							{
-								decoder.StandardOutput.Close();
-							}
-							catch
-							{
-							}
+							decoder.Kill();
 							decoder = nextTrack.Process;
 							Process = decoder;
 							_prefetch = null;
@@ -909,23 +830,7 @@ public sealed class StreamPlayer
 			}
 			if (Process != null)
 			{
-				try
-				{
-					if (!Process.HasExited)
-					{
-						Process.Kill();
-					}
-				}
-				catch
-				{
-				}
-				try
-				{
-					Process.WaitForExit(3000);
-				}
-				catch
-				{
-				}
+				Process.Kill();
 			}
 			Thread worker = _worker;
 			if (worker != null)
@@ -933,16 +838,6 @@ public sealed class StreamPlayer
 				try
 				{
 					worker.Join(3000);
-				}
-				catch
-				{
-				}
-			}
-			if (Process != null)
-			{
-				try
-				{
-					Process.StandardOutput.Close();
 				}
 				catch
 				{

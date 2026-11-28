@@ -57,6 +57,7 @@
     <Compile Include="LyricWord.cs" />
     <Compile Include="NeteaseClient.cs" />
     <Compile Include="OSError.cs" />
+    <Compile Include="PcmSource.cs" />
     <Compile Include="PlaybackStatus.cs" />
     <Compile Include="PlayerView.cs" />
     <Compile Include="Playlist.cs" />
