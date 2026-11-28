@@ -492,7 +492,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.9.2 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.9.3 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -741,7 +741,11 @@ namespace Hd2Qd.HD2Music
             transport.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             StackPanel controls = new StackPanel { Orientation = Orientation.Horizontal };
             controls.Children.Add(TransportButton("PREV", delegate { _engine.Previous(); }, false));
-            _play = TransportButton("PLAY", delegate { _engine.Toggle(); }, true);
+            _play = TransportButton("PLAY", delegate
+            {
+                _engine.Toggle();
+                UpdatePlayButton();
+            }, true);
             controls.Children.Add(_play);
             controls.Children.Add(TransportButton("NEXT", delegate { _engine.Next(); }, false));
             transport.Children.Add(controls);
@@ -2129,12 +2133,23 @@ namespace Hd2Qd.HD2Music
             }
         }
 
+        void UpdatePlayButton()
+        {
+            UiState state = _engine.Snapshot();
+            string label = I18n.Text(state.State == "playing" ? "PAUSE" : "PLAY");
+            if (!string.Equals(_play.Content as string, label, StringComparison.Ordinal))
+            {
+                _play.Content = label;
+                Util.Log("transport label -> " + label + " (state=" + state.State + ")");
+            }
+        }
+
         void RefreshCore()
         {
             UiState state = _engine.Snapshot();
             // set before the lib/search refreshes: one bad row must not leave the transport
             // showing yesterday's action
-            _play.Content = I18n.Text(state.State == "playing" ? "PAUSE" : "PLAY");
+            UpdatePlayButton();
             string stateName = (state.State ?? "idle").ToUpperInvariant();
             _stateText.Text = stateName;
             _stateText.Foreground = state.State == "playing" ? Theme.Yellow : (state.State == "paused" || state.State == "buffering" ? Theme.Blue : Theme.Muted);

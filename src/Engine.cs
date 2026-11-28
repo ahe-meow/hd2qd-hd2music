@@ -3111,10 +3111,14 @@ public sealed class Engine : IDisposable
 			}
 			_fmLastFetch = DateTime.UtcNow;
 			Util.Log("fm refill requested play=" + playImmediately);
-			lock (_lock)
+			// a background top-up must not repaint the console: the song is still playing
+			if (playImmediately)
 			{
-				_state = "loading";
-				_notice = "正在获取私人 FM…";
+				lock (_lock)
+				{
+					_state = "loading";
+					_notice = "正在获取私人 FM…";
+				}
 			}
 			List<Track> fresh = null;
 			try
@@ -3123,9 +3127,13 @@ public sealed class Engine : IDisposable
 			}
 			catch (Exception ex)
 			{
-				lock (_lock)
+				Util.Log("fm refill error: " + ex.Message);
+				if (playImmediately)
 				{
-					_notice = "获取失败：" + ex.Message;
+					lock (_lock)
+					{
+						_notice = "获取失败：" + ex.Message;
+					}
 				}
 			}
 			int first = -1;
