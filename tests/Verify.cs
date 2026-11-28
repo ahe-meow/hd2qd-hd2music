@@ -364,13 +364,20 @@ namespace Hd2Qd.HD2Music.Verify
         static void CheckFloatingTransport(Assembly asm)
         {
             Type icons = asm.GetType("Hd2Qd.HD2Music.Icon", true);
-            foreach (string name in new[] { "Previous", "Play", "Pause", "Next", "Volume", "Mute", "Hq", "Order", "Shuffle", "Repeat" })
+            foreach (string name in new[] { "Previous", "Play", "Pause", "Next", "Volume", "Mute", "Order", "Shuffle", "Repeat", "RepeatOne" })
             {
                 if (icons.GetField(name, BindingFlags.Static | BindingFlags.Public) == null)
                 {
                     Fail("RemixIcon " + name + " is missing");
                     return;
                 }
+            }
+            Type engine = asm.GetType("Hd2Qd.HD2Music.Engine", true);
+            string[] orders = (string[])engine.GetField("Orders", BindingFlags.Static | BindingFlags.Public).GetValue(null);
+            if (orders.Length != 4 || !orders.Contains("loop") || !orders.Contains("repeat"))
+            {
+                Fail("playback orders must include order, shuffle, loop and repeat-one");
+                return;
             }
             Type view = asm.GetType("Hd2Qd.HD2Music.PlayerView", true);
             foreach (string field in new[] { "_dock", "_playButton", "_volumePopup", "_volumeTrack", "_orderIcon" })

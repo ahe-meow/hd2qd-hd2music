@@ -515,7 +515,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v2.0.0 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v2.0.1 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -849,7 +849,27 @@ namespace Hd2Qd.HD2Music
             _volumeButton.MouseEnter += delegate { ShowVolumePopup(); };
             _volumeButton.MouseLeave += delegate { HideVolumePopupSoon(); };
             right.Children.Add(_volumeButton);
-            _qualityButton = IconButton(Icon.Hq, CycleQuality, "音质");
+            _qualityButton = new Button
+            {
+                Content = "标准",
+                Style = Theme.S("Ghost"),
+                Width = 44.0,
+                Height = 28.0,
+                MinHeight = 28.0,
+                Padding = new Thickness(0.0),
+                Margin = new Thickness(0.0, 0.0, 6.0, 0.0),
+                ToolTip = "音质 · 点击切换"
+            };
+            _qualityButton.Click += delegate
+            {
+                try
+                {
+                    CycleQuality();
+                }
+                catch
+                {
+                }
+            };
             right.Children.Add(_qualityButton);
             _orderButton = IconButton(Icon.Order, CycleOrder, "顺序播放");
             _orderIcon = (System.Windows.Shapes.Path)_orderButton.Content;
@@ -942,10 +962,12 @@ namespace Hd2Qd.HD2Music
                 Child = box,
                 Placement = PlacementMode.Top,
                 PlacementTarget = _volumeButton,
+                HorizontalOffset = 4.0,
                 StaysOpen = true
             };
             box.MouseEnter += delegate { CancelVolumeHide(); };
             box.MouseLeave += delegate { HideVolumePopupSoon(); };
+            box.PreviewMouseDown += delegate { CancelVolumeHide(); };
         }
 
         DispatcherTimer _volumeHide;
@@ -959,7 +981,7 @@ namespace Hd2Qd.HD2Music
         void HideVolumePopupSoon()
         {
             CancelVolumeHide();
-            _volumeHide = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(220.0) };
+            _volumeHide = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500.0) };
             _volumeHide.Tick += delegate
             {
                 _volumeHide.Stop();
@@ -2368,10 +2390,19 @@ namespace Hd2Qd.HD2Music
             _volumeButton.ToolTip = state.Volume > 0 ? "静音" : "取消静音 (" + _lastVolume + "%)";
 
             string quality = QualityName(state.Quality);
-            _qualityButton.ToolTip = "音质 · " + quality;
+            if (!string.Equals(_qualityButton.Content as string, quality, StringComparison.Ordinal))
+            {
+                _qualityButton.Content = quality;
+            }
+            _qualityButton.ToolTip = "音质 · " + quality + "（点击切换）";
             string order = OrderName(state.Order);
-            _orderIcon.Data = state.Order == "shuffle" ? Icon.Shuffle
-                : (state.Order == "repeat" ? Icon.Repeat : Icon.Order);
+            _orderIcon.Data = state.Order switch
+            {
+                "shuffle" => Icon.Shuffle,
+                "loop" => Icon.Repeat,
+                "repeat" => Icon.RepeatOne,
+                _ => Icon.Order
+            };
             _orderButton.ToolTip = "播放顺序 · " + order;
         }
 
@@ -3048,6 +3079,7 @@ namespace Hd2Qd.HD2Music
         static string OrderName(string value) => value switch
         {
             "shuffle" => "随机播放",
+            "loop" => "列表循环",
             "repeat" => "单曲循环",
             _ => "顺序播放",
         };

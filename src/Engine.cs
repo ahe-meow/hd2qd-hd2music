@@ -68,7 +68,7 @@ public sealed class Engine : IDisposable
 
 	public static readonly string[] Qualities = new string[5] { "standard", "higher", "exhigh", "lossless", "hires" };
 
-	public static readonly string[] Orders = new string[3] { "order", "shuffle", "repeat" };
+	public static readonly string[] Orders = new string[4] { "order", "shuffle", "loop", "repeat" };
 
 	public readonly string Root;
 
@@ -3629,6 +3629,10 @@ public sealed class Engine : IDisposable
 			if (!manual && _currentListId == "fm")
 			{
 				return _index + 1;
+			}
+			if (_order == "loop" && _queueTracks.Count > 0 && _index >= _queueTracks.Count - 1)
+			{
+				return 0;
 			}
 			if (_order == "repeat" && !manual && _index >= 0)
 			{

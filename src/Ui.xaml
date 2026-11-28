@@ -291,10 +291,10 @@
                 </RepeatButton>
               </Track.IncreaseRepeatButton>
               <Track.Thumb>
-                <Thumb Width="10" Height="16">
+                <Thumb Width="10" Height="10" VerticalAlignment="Center">
                   <Thumb.Template>
                     <ControlTemplate TargetType="Thumb">
-                      <Border Background="{StaticResource Ink}" Width="10" Height="16"/>
+                      <Border Background="{StaticResource Ink}" Width="10" Height="10" VerticalAlignment="Center"/>
                     </ControlTemplate>
                   </Thumb.Template>
                 </Thumb>
