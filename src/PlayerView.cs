@@ -516,7 +516,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v2.0.2 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v2.0.3 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1212,7 +1212,9 @@ namespace Hd2Qd.HD2Music
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
             };
-            _cards = new WrapPanel();
+            // centre the grid of cards in the page, but keep each row's cards packed from
+            // its left edge: WrapPanel wraps within the viewport, then centres the block
+            _cards = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Center };
             scroll.Content = _cards;
             body.Children.Add(scroll);
             _libraryEmpty = new TextBlock
