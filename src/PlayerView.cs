@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -44,8 +45,25 @@ namespace Hd2Qd.HD2Music
         TextBlock _time;
         TextBlock _duration;
         Slider _progress;
-        Slider _volume;
-        Button _play;
+
+        Border _dock;
+        Image _dockCover;
+        TextBlock _dockTitle;
+        TextBlock _dockArtist;
+        TextBlock _dockSource;
+        Button _playButton;
+        System.Windows.Shapes.Path _playIcon;
+        Button _volumeButton;
+        System.Windows.Shapes.Path _volumeIcon;
+        Button _qualityButton;
+        Button _orderButton;
+        System.Windows.Shapes.Path _orderIcon;
+        Popup _volumePopup;
+        Border _volumeTrack;
+        Border _volumeFill;
+        bool _volumeDragging;
+        int _lastVolume = 65;
+        bool _playingShown;
         ListBox _lyricSheet;
         string _lyricSheetSignature = "";
         int _lyricShown = -1;
@@ -150,7 +168,6 @@ namespace Hd2Qd.HD2Music
         TextBlock _statusFfmpeg;
 
         bool _draggingProgress;
-        bool _suppressVolume;
         bool _stopped;
         bool _initialized;
         string _coverUrl = "";
@@ -192,6 +209,12 @@ namespace Hd2Qd.HD2Music
             FrameworkElement status = BuildStatusBar();
             Grid.SetRow(status, 2);
             root.Children.Add(status);
+
+            // one transport for every tab: a floating card over the page area
+            _dock = BuildDock();
+            Grid.SetRow(_dock, 1);
+            Panel.SetZIndex(_dock, 5);
+            root.Children.Add(_dock);
 
             _overlay = BuildSettingsSheet();
             Grid.SetRowSpan(_overlay, 3);
@@ -492,7 +515,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.9.6 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v2.0.0 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -701,108 +724,30 @@ namespace Hd2Qd.HD2Music
             Grid.SetRow(spectrumRow, 1);
             hero.Children.Add(spectrumRow);
 
-            StackPanel bottom = new StackPanel { Margin = new Thickness(0.0, 4.0, 0.0, 0.0) };
-            Grid progressRow = new Grid();
-            progressRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
-            progressRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            _progress = new Slider
-            {
-                Minimum = 0.0,
-                Maximum = 1.0,
-                IsMoveToPointEnabled = true,
-                Height = 22.0,
-                VerticalAlignment = VerticalAlignment.Center,
-                Style = Theme.S("Range")
-            };
-            _progress.PreviewMouseDown += delegate { _draggingProgress = true; };
-            _progress.PreviewMouseUp += delegate
-            {
-                _draggingProgress = false;
-                _engine.Seek(_progress.Value);
-            };
-            progressRow.Children.Add(_progress);
-            StackPanel times = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(12.0, 0.0, 0.0, 0.0)
-            };
-            _time = Mono("0:00", 10.0, Theme.Ink);
-            _duration = Mono(" / 0:00", 10.0, Theme.Muted);
-            times.Children.Add(_time);
-            times.Children.Add(_duration);
-            Grid.SetColumn(times, 1);
-            progressRow.Children.Add(times);
-            bottom.Children.Add(progressRow);
-
-            Grid transport = new Grid { Margin = new Thickness(0.0, 6.0, 0.0, 0.0) };
-            transport.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            transport.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
-            transport.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            StackPanel controls = new StackPanel { Orientation = Orientation.Horizontal };
-            controls.Children.Add(TransportButton("PREV", delegate { _engine.Previous(); }, false));
-            _play = TransportButton("PLAY", delegate
-            {
-                _engine.Toggle();
-                UpdatePlayButton();
-            }, true);
-            _play.Tag = "transport";
-            controls.Children.Add(_play);
-            controls.Children.Add(TransportButton("NEXT", delegate { _engine.Next(); }, false));
-            transport.Children.Add(controls);
-
-            StackPanel volume = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            volume.Children.Add(new TextBlock
-            {
-                Text = "VOL",
-                FontFamily = Theme.Font("Mono"),
-                FontSize = 8.5,
-                Foreground = Theme.Muted,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0.0, 0.0, 8.0, 0.0)
-            });
-            _volume = new Slider
-            {
-                Minimum = 0.0,
-                Maximum = 100.0,
-                Width = 110.0,
-                Height = 22.0,
-                VerticalAlignment = VerticalAlignment.Center,
-                Style = Theme.S("Range")
-            };
-            _volume.ValueChanged += delegate
-            {
-                if (!_suppressVolume)
-                {
-                    _engine.SetVolume((int)_volume.Value);
-                }
-            };
-            volume.Children.Add(_volume);
-            Grid.SetColumn(volume, 2);
-            transport.Children.Add(volume);
-            bottom.Children.Add(transport);
-            Grid.SetRow(bottom, 2);
-            hero.Children.Add(bottom);
             return hero;
         }
 
-        Button TransportButton(string text, Action action, bool primary)
+        static Button IconButton(Geometry icon, Action action, string tip, bool primary = false)
         {
+            System.Windows.Shapes.Path glyph = new System.Windows.Shapes.Path
+            {
+                Data = icon,
+                Fill = primary ? Theme.TapeInk : Theme.Ink,
+                Width = 15.0,
+                Height = 15.0,
+                Stretch = Stretch.Uniform,
+                IsHitTestVisible = false
+            };
             Button button = new Button
             {
-                Content = text,
+                Content = glyph,
                 Style = Theme.S(primary ? "Primary" : "Ghost"),
-                Width = primary ? 68.0 : 58.0,
-                Height = 34.0,
-                MinHeight = 34.0,
+                Width = 32.0,
+                Height = 28.0,
+                MinHeight = 28.0,
                 Padding = new Thickness(0.0),
-                FontSize = 10.0,
-                FontWeight = FontWeights.SemiBold,
-                Margin = new Thickness(0.0, 0.0, 6.0, 0.0)
+                Margin = new Thickness(0.0, 0.0, 6.0, 0.0),
+                ToolTip = tip
             };
             button.Click += delegate
             {
@@ -815,6 +760,237 @@ namespace Hd2Qd.HD2Music
                 }
             };
             return button;
+        }
+
+        /// <summary>The transport floats above the page area, so every tab keeps the same
+        /// controls in the same place. RemixIcon glyphs replace all button labels.</summary>
+        Border BuildDock()
+        {
+            Border card = new Border
+            {
+                Background = Theme.Ground700,
+                BorderBrush = Theme.Grid,
+                BorderThickness = new Thickness(1.0),
+                Padding = new Thickness(12.0, 8.0, 12.0, 8.0),
+                Margin = new Thickness(12.0, 0.0, 12.0, 10.0),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Bottom
+            };
+            Grid grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300.0) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
+
+            StackPanel left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            _dockCover = new Image { Width = 40.0, Height = 40.0, Stretch = Stretch.UniformToFill };
+            left.Children.Add(new Border { Width = 40.0, Height = 40.0, Background = Theme.Grid, Child = _dockCover });
+            StackPanel trackWords = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10.0, 0.0, 0.0, 0.0) };
+            _dockTitle = Theme.Words("", 13.0, Theme.Ink);
+            _dockArtist = Theme.Words("", 11.0, Theme.Muted);
+            _dockSource = Mono("", 9.0, Theme.Muted);
+            trackWords.Children.Add(_dockTitle);
+            trackWords.Children.Add(_dockArtist);
+            trackWords.Children.Add(_dockSource);
+            left.Children.Add(trackWords);
+            grid.Children.Add(left);
+
+            StackPanel centre = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            _progress = new Slider
+            {
+                Minimum = 0.0,
+                Maximum = 1.0,
+                Height = 14.0,
+                VerticalAlignment = VerticalAlignment.Center,
+                Style = Theme.S("Range")
+            };
+            _progress.PreviewMouseDown += delegate { _draggingProgress = true; };
+            _progress.PreviewMouseUp += delegate
+            {
+                _draggingProgress = false;
+                _engine.Seek(_progress.Value);
+            };
+            centre.Children.Add(_progress);
+
+            Grid times = new Grid { Height = 16.0 };
+            _time = Mono("0:00", 11.0, Theme.Muted);
+            _duration = Mono("0:00", 11.0, Theme.Muted);
+            _duration.HorizontalAlignment = HorizontalAlignment.Right;
+            times.Children.Add(_time);
+            times.Children.Add(_duration);
+            centre.Children.Add(times);
+
+            StackPanel controls = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0.0, 3.0, 0.0, 0.0)
+            };
+            controls.Children.Add(IconButton(Icon.Previous, delegate { _engine.Previous(); }, "上一首"));
+            _playButton = IconButton(Icon.Play, delegate
+            {
+                _engine.Toggle();
+                UpdatePlayButton();
+            }, "播放", primary: true);
+            _playIcon = (System.Windows.Shapes.Path)_playButton.Content;
+            controls.Children.Add(_playButton);
+            controls.Children.Add(IconButton(Icon.Next, delegate { _engine.Next(); }, "下一首"));
+            centre.Children.Add(controls);
+            Grid.SetColumn(centre, 1);
+            grid.Children.Add(centre);
+
+            StackPanel right = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            _volumeButton = IconButton(Icon.Volume, ToggleMute, "静音");
+            _volumeIcon = (System.Windows.Shapes.Path)_volumeButton.Content;
+            _volumeButton.MouseEnter += delegate { ShowVolumePopup(); };
+            _volumeButton.MouseLeave += delegate { HideVolumePopupSoon(); };
+            right.Children.Add(_volumeButton);
+            _qualityButton = IconButton(Icon.Hq, CycleQuality, "音质");
+            right.Children.Add(_qualityButton);
+            _orderButton = IconButton(Icon.Order, CycleOrder, "顺序播放");
+            _orderIcon = (System.Windows.Shapes.Path)_orderButton.Content;
+            right.Children.Add(_orderButton);
+            Grid.SetColumn(right, 2);
+            grid.Children.Add(right);
+
+            card.Child = grid;
+            BuildVolumePopup();
+            return card;
+        }
+
+        void ToggleMute()
+        {
+            int volume = _engine.Snapshot().Volume;
+            if (volume > 0)
+            {
+                _lastVolume = volume;
+                _engine.SetVolume(0);
+            }
+            else
+            {
+                _engine.SetVolume(_lastVolume > 0 ? _lastVolume : 65);
+            }
+            Refresh();
+        }
+
+        void CycleQuality()
+        {
+            string current = _engine.Snapshot().Quality;
+            int i = Array.IndexOf(Engine.Qualities, current);
+            _engine.SetQuality(Engine.Qualities[(i + 1) % Engine.Qualities.Length]);
+            Refresh();
+        }
+
+        void CycleOrder()
+        {
+            string current = _engine.Snapshot().Order;
+            int i = Array.IndexOf(Engine.Orders, current);
+            _engine.SetOrder(Engine.Orders[(i + 1) % Engine.Orders.Length]);
+            Refresh();
+        }
+
+        void BuildVolumePopup()
+        {
+            Border box = new Border
+            {
+                Background = Theme.Ground700,
+                BorderBrush = Theme.Grid,
+                BorderThickness = new Thickness(1.0),
+                Padding = new Thickness(8.0)
+            };
+            _volumeTrack = new Border
+            {
+                Width = 8.0,
+                Height = 110.0,
+                Background = Theme.Grid,
+                Cursor = Cursors.Hand
+            };
+            _volumeFill = new Border
+            {
+                Background = Theme.Yellow,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Height = 65.0,
+                IsHitTestVisible = false
+            };
+            _volumeTrack.Child = _volumeFill;
+            _volumeTrack.PreviewMouseDown += delegate(object sender, MouseButtonEventArgs e)
+            {
+                _volumeDragging = true;
+                _volumeTrack.CaptureMouse();
+                DragVolume(e);
+            };
+            _volumeTrack.PreviewMouseMove += delegate(object sender, MouseEventArgs e)
+            {
+                if (_volumeDragging)
+                {
+                    DragVolume(e);
+                }
+            };
+            _volumeTrack.PreviewMouseUp += delegate
+            {
+                _volumeDragging = false;
+                _volumeTrack.ReleaseMouseCapture();
+                HideVolumePopupSoon();
+            };
+            box.Child = _volumeTrack;
+            _volumePopup = new Popup
+            {
+                Child = box,
+                Placement = PlacementMode.Top,
+                PlacementTarget = _volumeButton,
+                StaysOpen = true
+            };
+            box.MouseEnter += delegate { CancelVolumeHide(); };
+            box.MouseLeave += delegate { HideVolumePopupSoon(); };
+        }
+
+        DispatcherTimer _volumeHide;
+
+        void ShowVolumePopup()
+        {
+            CancelVolumeHide();
+            _volumePopup.IsOpen = true;
+        }
+
+        void HideVolumePopupSoon()
+        {
+            CancelVolumeHide();
+            _volumeHide = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(220.0) };
+            _volumeHide.Tick += delegate
+            {
+                _volumeHide.Stop();
+                if (!_volumeDragging)
+                {
+                    _volumePopup.IsOpen = false;
+                }
+            };
+            _volumeHide.Start();
+        }
+
+        void CancelVolumeHide()
+        {
+            if (_volumeHide != null)
+            {
+                _volumeHide.Stop();
+                _volumeHide = null;
+            }
+        }
+
+        void DragVolume(MouseEventArgs e)
+        {
+            if (_volumeTrack.ActualHeight <= 0.0)
+            {
+                return;
+            }
+            double ratio = 1.0 - Math.Max(0.0, Math.Min(_volumeTrack.ActualHeight, e.GetPosition(_volumeTrack).Y)) / _volumeTrack.ActualHeight;
+            int value = (int)Math.Round(ratio * 100.0);
+            _lastVolume = value;
+            _engine.SetVolume(value);
+            Refresh();
         }
 
         FrameworkElement BuildQueueCard()
@@ -2159,14 +2335,44 @@ namespace Hd2Qd.HD2Music
         {
             UiState state = _engine.Snapshot();
             // loading and buffering are still "playing" to the listener: a Next click
-            // must not flash the button back to 播放 between tracks
+            // must not flash the icon back to play between tracks
             bool playing = state.State == "playing" || state.State == "loading" || state.State == "buffering";
-            string label = I18n.Text(playing ? "PAUSE" : "PLAY");
-            if (!string.Equals(_play.Content as string, label, StringComparison.Ordinal))
+            if (_playingShown != playing)
             {
-                _play.Content = label;
-                Util.Log("transport label -> " + label + " (state=" + state.State + ")");
+                _playingShown = playing;
+                _playIcon.Data = playing ? Icon.Pause : Icon.Play;
+                _playButton.ToolTip = playing ? "暂停" : "播放";
+                Util.Log("transport icon -> " + (playing ? "pause" : "play") + " (state=" + state.State + ")");
             }
+        }
+
+        void RefreshDock(UiState state)
+        {
+            _dockTitle.Text = string.IsNullOrEmpty(state.Title) ? I18n.Text("未选歌曲") : state.Title;
+            _dockArtist.Text = state.Artist ?? "";
+            _dockSource.Text = string.IsNullOrEmpty(state.PlaylistName) ? "—" : state.PlaylistName;
+            if (!_draggingProgress)
+            {
+                _progress.Maximum = Math.Max(1.0, state.Duration);
+                _progress.Value = Math.Max(0.0, Math.Min(state.Pos, _progress.Maximum));
+            }
+            _time.Text = Util.FormatTime(_progress.Value);
+            _duration.Text = Util.FormatTime(state.Duration);
+
+            if (state.Volume > 0)
+            {
+                _lastVolume = state.Volume;
+            }
+            _volumeFill.Height = 110.0 * Math.Max(0.0, Math.Min(100.0, state.Volume)) / 100.0;
+            _volumeIcon.Data = state.Volume > 0 ? Icon.Volume : Icon.Mute;
+            _volumeButton.ToolTip = state.Volume > 0 ? "静音" : "取消静音 (" + _lastVolume + "%)";
+
+            string quality = QualityName(state.Quality);
+            _qualityButton.ToolTip = "音质 · " + quality;
+            string order = OrderName(state.Order);
+            _orderIcon.Data = state.Order == "shuffle" ? Icon.Shuffle
+                : (state.Order == "repeat" ? Icon.Repeat : Icon.Order);
+            _orderButton.ToolTip = "播放顺序 · " + order;
         }
 
         void RefreshCore()
@@ -2195,16 +2401,7 @@ namespace Hd2Qd.HD2Music
             _notice.Text = I18n.Text(state.Notice ?? "");
 
             SetImage(state.CoverUrl);
-            if (!_draggingProgress)
-            {
-                _progress.Maximum = Math.Max(1.0, state.Duration);
-                _progress.Value = Math.Max(0.0, Math.Min(state.Pos, _progress.Maximum));
-            }
-            _time.Text = Util.FormatTime(_progress.Value);
-            _duration.Text = " / " + Util.FormatTime(state.Duration);
-            _suppressVolume = true;
-            _volume.Value = state.Volume;
-            _suppressVolume = false;
+            RefreshDock(state);
 
             MarkSegments(_qualitySegments, state.Quality);
             MarkSegments(_orderSegments, state.Order);
@@ -2872,6 +3069,7 @@ namespace Hd2Qd.HD2Music
             {
                 _coverUrl = "";
                 _cover.Source = null;
+                _dockCover.Source = null;
                 return;
             }
             if (url == _coverUrl)
@@ -2888,6 +3086,7 @@ namespace Hd2Qd.HD2Music
                 image.DecodePixelWidth = 360;
                 image.EndInit();
                 _cover.Source = image;
+                _dockCover.Source = image;
             }
             catch
             {

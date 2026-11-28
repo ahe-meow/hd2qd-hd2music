@@ -76,6 +76,7 @@ namespace Hd2Qd.HD2Music.Verify
             CheckQr(asm);
             CheckPlaybackWithoutGame(asm);
             CheckTransportToggle(asm);
+            CheckFloatingTransport(asm);
             CheckFmStation(asm);
             CheckPlaylistBrowse(asm);
             CheckDataHub(asm);
@@ -358,6 +359,34 @@ namespace Hd2Qd.HD2Music.Verify
                 return;
             }
             Pass("transport toggles back from 暂停 to 播放 even before the decoder is ready");
+        }
+
+        static void CheckFloatingTransport(Assembly asm)
+        {
+            Type icons = asm.GetType("Hd2Qd.HD2Music.Icon", true);
+            foreach (string name in new[] { "Previous", "Play", "Pause", "Next", "Volume", "Mute", "Hq", "Order", "Shuffle", "Repeat" })
+            {
+                if (icons.GetField(name, BindingFlags.Static | BindingFlags.Public) == null)
+                {
+                    Fail("RemixIcon " + name + " is missing");
+                    return;
+                }
+            }
+            Type view = asm.GetType("Hd2Qd.HD2Music.PlayerView", true);
+            foreach (string field in new[] { "_dock", "_playButton", "_volumePopup", "_volumeTrack", "_orderIcon" })
+            {
+                if (view.GetField(field, BindingFlags.Instance | BindingFlags.NonPublic) == null)
+                {
+                    Fail("floating transport field " + field + " is missing");
+                    return;
+                }
+            }
+            if (view.GetMethod("TransportButton", BindingFlags.Instance | BindingFlags.NonPublic) != null)
+            {
+                Fail("transport still builds text buttons");
+                return;
+            }
+            Pass("floating transport uses RemixIcon glyphs and a volume popup");
         }
 
         static void CheckFmStation(Assembly asm)
