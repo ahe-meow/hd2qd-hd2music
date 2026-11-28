@@ -4681,6 +4681,7 @@ public sealed class Engine : IDisposable
 			list.Add("time=" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
 			list.Add("version=" + typeof(Engine).Assembly.GetName().Version);
 			list.Add("edition=" + (Ffmpeg.Embedded ? "full" : "lite"));
+			list.Add("decoder=" + (PcmSource.MfAvailable ? "media-foundation" : "ffmpeg-only") + " last=" + PcmSource.LastDecoder);
 			list.Add("ffmpeg=" + FfmpegPath + " exists=" + (File.Exists(FfmpegPath) ? "yes" : "no"));
 			list.Add("state_file=" + Path.Combine(Root, "ncm_state.txt"));
 			list.Add("account=" + Masked(_account));

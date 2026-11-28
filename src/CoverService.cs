@@ -5,6 +5,9 @@ using System.IO;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace Hd2Qd.HD2Music;
 
@@ -156,7 +159,55 @@ internal static class CoverService
 		}
 	}
 
+	/// <summary>side x side RGB24, scaled to cover the square and cropped to its centre. Windows'
+	/// own imaging (WIC) decodes JPEG and PNG, and WebP where its codec is installed; ffmpeg.exe
+	/// is used only for an image WIC cannot read.</summary>
 	private static byte[] Decode(string ffmpeg, byte[] image, int side)
+	{
+		byte[] pixels = DecodeWic(image, side);
+		if (pixels == null && !string.IsNullOrEmpty(ffmpeg) && File.Exists(ffmpeg))
+		{
+			pixels = DecodeFfmpeg(ffmpeg, image, side);
+		}
+		return pixels;
+	}
+
+	internal static byte[] DecodeWic(byte[] image, int side)
+	{
+		try
+		{
+			BitmapFrame frame;
+			using (MemoryStream stream = new MemoryStream(image, writable: false))
+			{
+				frame = BitmapDecoder.Create(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad).Frames[0];
+			}
+			int width = frame.PixelWidth;
+			int height = frame.PixelHeight;
+			if (width <= 0 || height <= 0)
+			{
+				return null;
+			}
+			double scale = Math.Max((double)side / width, (double)side / height);
+			BitmapSource scaled = new TransformedBitmap(frame, new ScaleTransform(scale, scale));
+			int left = Math.Max(0, (scaled.PixelWidth - side) / 2);
+			int top = Math.Max(0, (scaled.PixelHeight - side) / 2);
+			if (scaled.PixelWidth < side || scaled.PixelHeight < side)
+			{
+				return null;
+			}
+			BitmapSource cropped = new CroppedBitmap(scaled, new Int32Rect(left, top, side, side));
+			BitmapSource rgb = new FormatConvertedBitmap(cropped, PixelFormats.Rgb24, null, 0.0);
+			byte[] pixels = new byte[side * side * 3];
+			rgb.CopyPixels(pixels, side * 3, 0);
+			return pixels;
+		}
+		catch
+		{
+			return null;
+		}
+	}
+
+	private static byte[] DecodeFfmpeg(string ffmpeg, byte[] image, int side)
 	{
 		ProcessStartInfo processStartInfo = new ProcessStartInfo(ffmpeg)
 		{

@@ -2448,7 +2448,8 @@ namespace Hd2Qd.HD2Music
             _lyricsTick.IsChecked = state.LyricsEnabled;
             _automixTick.IsChecked = state.Automix;
             _ffmpeg.Text = I18n.Text(Ffmpeg.Embedded ? "内置 · " : "外置 · ") + _engine.FfmpegPath;
-            _ffmpeg.Foreground = File.Exists(_engine.FfmpegPath) ? Theme.Muted : Theme.Yellow;
+            bool decoderReady = PcmSource.MfAvailable || File.Exists(_engine.FfmpegPath);
+            _ffmpeg.Foreground = decoderReady ? Theme.Muted : Theme.Yellow;
             _sheetAccount.Text = string.IsNullOrEmpty(state.Account) ? I18n.Text("未登录") : state.Account;
             _sheetLock.Text = _engine.IsLockedOut ? I18n.Text("网易云在线助手已在运行：点击播放会转交助手；本插件不写状态文件。") : "";
 
@@ -2458,8 +2459,8 @@ namespace Hd2Qd.HD2Music
             _sysQueue.Text = state.Count + I18n.Text(" TRACKS");
             _sysPlaylist.Text = string.IsNullOrEmpty(state.PlaylistName) ? "—" : state.PlaylistName;
             _sysTrack.Text = Math.Max(0, state.Index + 1) + " / " + state.Count;
-            _sysFfmpeg.Text = File.Exists(_engine.FfmpegPath) ? "READY" : "MISSING";
-            _sysFfmpeg.Foreground = File.Exists(_engine.FfmpegPath) ? Theme.Ink : Theme.Yellow;
+            _sysFfmpeg.Text = PcmSource.MfAvailable ? "MF" : File.Exists(_engine.FfmpegPath) ? "READY" : "MISSING";
+            _sysFfmpeg.Foreground = decoderReady ? Theme.Ink : Theme.Yellow;
             _sysHelper.Text = _engine.IsLockedOut ? "LOCKED" : "READY";
             _sysHelper.Foreground = _engine.IsLockedOut ? Theme.Yellow : Theme.Ink;
 
@@ -2492,9 +2493,8 @@ namespace Hd2Qd.HD2Music
             _statusNotice.Foreground = (busy || blocked) ? Theme.Yellow : Theme.Muted;
             _statusQueue.Text = I18n.Text("QUEUE ") + state.Count;
             _statusQuality.Text = I18n.Text("QUALITY ") + I18n.Text(state.Quality.ToUpperInvariant());
-            bool ffmpegReady = File.Exists(_engine.FfmpegPath);
-            _statusFfmpeg.Text = I18n.Text("FFMPEG ") + I18n.Text(ffmpegReady ? "OK" : "MISSING");
-            _statusFfmpeg.Foreground = ffmpegReady ? Theme.Muted : Theme.Yellow;
+            _statusFfmpeg.Text = I18n.Text("FFMPEG ") + I18n.Text(decoderReady ? "OK" : "MISSING");
+            _statusFfmpeg.Foreground = decoderReady ? Theme.Muted : Theme.Yellow;
         }
 
         void RefreshPeek(UiState state)
