@@ -64,6 +64,7 @@ namespace Hd2Qd.HD2Music
         bool _volumeDragging;
         int _lastVolume = 65;
         bool _playingShown;
+        string _qualityRequested;
         ListBox _lyricSheet;
         string _lyricSheetSignature = "";
         int _lyricShown = -1;
@@ -515,7 +516,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v2.0.1 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v2.0.2 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -901,7 +902,12 @@ namespace Hd2Qd.HD2Music
         {
             string current = _engine.Snapshot().Quality;
             int i = Array.IndexOf(Engine.Qualities, current);
-            _engine.SetQuality(Engine.Qualities[(i + 1) % Engine.Qualities.Length]);
+            string next = Engine.Qualities[(i + 1) % Engine.Qualities.Length];
+            // when the helper owns playback SetQuality only forwards the command, so the
+            // snapshot stays stale. Show the requested value on this click.
+            _qualityRequested = next;
+            _qualityButton.Content = QualityName(next);
+            _engine.SetQuality(next);
             Refresh();
         }
 
@@ -2389,11 +2395,12 @@ namespace Hd2Qd.HD2Music
             _volumeIcon.Data = state.Volume > 0 ? Icon.Volume : Icon.Mute;
             _volumeButton.ToolTip = state.Volume > 0 ? "静音" : "取消静音 (" + _lastVolume + "%)";
 
-            string quality = QualityName(state.Quality);
-            if (!string.Equals(_qualityButton.Content as string, quality, StringComparison.Ordinal))
+            if (!_engine.IsLockedOut)
             {
-                _qualityButton.Content = quality;
+                _qualityRequested = null;
             }
+            string quality = QualityName(_qualityRequested ?? state.Quality);
+            _qualityButton.Content = quality;
             _qualityButton.ToolTip = "音质 · " + quality + "（点击切换）";
             string order = OrderName(state.Order);
             _orderIcon.Data = state.Order switch
