@@ -492,7 +492,7 @@ namespace Hd2Qd.HD2Music
             DockPanel dock = new DockPanel { Margin = new Thickness(14.0, 0.0, 14.0, 0.0), LastChildFill = false };
             TextBlock version = new TextBlock
             {
-                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.9.3 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
+                Text = "HD2 MOD QUICK DEPLOY · API 2 · v1.9.4 · " + I18n.Text(Ffmpeg.Embedded ? "FULL" : "LITE"),
                 FontFamily = Theme.Font("Mono"),
                 FontSize = 9.0,
                 Foreground = Theme.Muted,
@@ -1041,6 +1041,10 @@ namespace Hd2Qd.HD2Music
                 _libraryDetail.Visibility = Visibility.Collapsed;
                 _libraryBrowse.Visibility = Visibility.Visible;
             });
+            // the manager's Ghost style has its own padding; make the inset explicit so the
+            // button never sits against the band edge
+            back.Margin = new Thickness(8.0, 0.0, 0.0, 0.0);
+            back.Padding = new Thickness(12.0, 0.0, 12.0, 0.0);
             StackPanel identity = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             identity.Children.Add(back);
             _detailTitle = Theme.Words("", 10.0, Theme.Muted);
@@ -1624,12 +1628,12 @@ namespace Hd2Qd.HD2Music
                     row.Children.Add(words);
                     row.Background = Brushes.Transparent;
                     row.Tag = new TextBlock[] { at, text, translation };
-                    _lyricSheet.Items.Add(new ListBoxItem
+                    _lyricSheet.Items.Add(ReadyRow(new ListBoxItem
                     {
                         Tag = line.At,
                         Content = row,
                         Padding = new Thickness(0.0, 5.0, 0.0, 5.0)
-                    });
+                    }));
                 }
                 for (int i = 0; i < LyricPad; i++)
                 {
@@ -2133,10 +2137,30 @@ namespace Hd2Qd.HD2Music
             }
         }
 
+        /// <summary>
+        /// Virtualised rows are not in the visual tree until scrolled into view, so the
+        /// periodic I18n.Apply(this) cannot raise their CJK font size. Translate each row
+        /// before it is handed to the list, making the size final before first paint.
+        /// </summary>
+        static ListBoxItem ReadyRow(ListBoxItem row)
+        {
+            // a ListBoxItem's Content is not in its visual tree until the template is applied,
+            // so walking the item alone misses exactly the rows we are trying to fix
+            if (row.Content is FrameworkElement content)
+            {
+                I18n.Apply(content);
+            }
+            I18n.Apply(row);
+            return row;
+        }
+
         void UpdatePlayButton()
         {
             UiState state = _engine.Snapshot();
-            string label = I18n.Text(state.State == "playing" ? "PAUSE" : "PLAY");
+            // loading and buffering are still "playing" to the listener: a Next click
+            // must not flash the button back to 播放 between tracks
+            bool playing = state.State == "playing" || state.State == "loading" || state.State == "buffering";
+            string label = I18n.Text(playing ? "PAUSE" : "PLAY");
             if (!string.Equals(_play.Content as string, label, StringComparison.Ordinal))
             {
                 _play.Content = label;
@@ -2287,11 +2311,11 @@ namespace Hd2Qd.HD2Music
                 row.Background = Brushes.Transparent;
                 int at = i;
                 row.MouseLeftButtonUp += delegate { PlayQueueAt(at); };
-                _peek.Items.Add(new ListBoxItem { Tag = i, Content = row });
+                _peek.Items.Add(ReadyRow(new ListBoxItem { Tag = i, Content = row }));
             }
             if (_peek.Items.Count == 0)
             {
-                _peek.Items.Add(new ListBoxItem
+                _peek.Items.Add(ReadyRow(new ListBoxItem
                 {
                     Content = new TextBlock
                     {
@@ -2299,7 +2323,7 @@ namespace Hd2Qd.HD2Music
                         FontSize = 11.0,
                         Foreground = Theme.Muted
                     }
-                });
+                }));
             }
         }
 
@@ -2398,7 +2422,7 @@ namespace Hd2Qd.HD2Music
                 add.Margin = new Thickness(0.0, 0.0, 8.0, 0.0);
                 Grid.SetColumn(add, 2);
                 row.Children.Add(add);
-                _detailTracks.Items.Add(new ListBoxItem { Content = row });
+                _detailTracks.Items.Add(ReadyRow(new ListBoxItem { Content = row }));
             }
         }
 
@@ -2529,7 +2553,7 @@ namespace Hd2Qd.HD2Music
                     TinyButton("✕", "移出队列", delegate { _engine.QueueEdit(at, "remove"); }),
                     TinyButton("⇢", "设为下一首", delegate { _engine.QueueEdit(at, "next"); })
                 };
-                _queue.Items.Add(TrackRow(i, state.Queue[i], current, delegate { PlayQueueAt(at); }, actions));
+                _queue.Items.Add(ReadyRow(TrackRow(i, state.Queue[i], current, delegate { PlayQueueAt(at); }, actions)));
             }
             _queueEmpty.Visibility = state.Queue.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -2595,7 +2619,7 @@ namespace Hd2Qd.HD2Music
                         TextTrimming = TextTrimming.CharacterEllipsis
                     });
                 }
-                _channels.Items.Add(new ListBoxItem { Tag = i, Content = words });
+                _channels.Items.Add(ReadyRow(new ListBoxItem { Tag = i, Content = words }));
             }
             if (_channels.SelectedIndex < 0 && _channels.Items.Count > 0)
             {
@@ -2631,7 +2655,7 @@ namespace Hd2Qd.HD2Music
                 row.Background = Brushes.Transparent;
                 int at = i;
                 row.MouseLeftButtonUp += delegate { _engine.PodcastPlay(at); };
-                _episodes.Items.Add(new ListBoxItem { Tag = i, Content = row });
+                _episodes.Items.Add(ReadyRow(new ListBoxItem { Tag = i, Content = row }));
             }
             _episodeTitle.Text = state.PodcastTracks.Count > 0 ? state.PodcastTracks.Count + " 期" : "";
         }
