@@ -1,12 +1,13 @@
 # Third-party notices
 
-The plugin's own source is MIT (see [LICENSE](LICENSE)). Two third-party programs travel with
+The plugin's own source is MIT (see [LICENSE](LICENSE)). Three third-party programs travel with
 it; their licences are their own.
 
 ## FFmpeg 6.1.1-essentials_build
 
-- File: `assets/ffmpeg.exe.gz` (gzip of `ffmpeg.exe`, 78.7 MB extracted), embedded in the
-  plugin DLL (the **Full** build) as `ffmpeg.exe.gz` and written out on first use by `src/Ffmpeg.cs`; the **Lite** build does not carry it.
+- File: `assets/ffmpeg.exe.lzma` (LZMA of `ffmpeg.exe`, 78.7 MB extracted, packed to 20.7 MB),
+  embedded in the plugin DLL (the **Full** build) as `ffmpeg.exe.lzma` and written out on first
+  use by `src/Ffmpeg.cs`; the **Lite** build does not carry it.
 - Build: `ffmpeg version 6.1.1-essentials_build-www.gyan.dev`, Copyright (c) 2000-2023 the
   FFmpeg developers, built with gcc 12.2.0 (MSYS2), `--enable-gpl --enable-version3`, a GPLv3
   build.
@@ -25,3 +26,10 @@ it; their licences are their own.
   `src/QrCode.cs`.
 - Copyright (c) 2013-2020 Raffael Herrmann.
 - Licence: MIT — https://github.com/codebude/QRCoder/blob/master/LICENSE.txt
+
+## LZMA SDK 22.1.1 (7-Zip)
+
+- File: `SevenZip.dll` (net20, from the `LZMA-SDK` NuGet package), embedded in the plugin DLL
+  and loaded from bytes by `src/Ffmpeg.cs` to unpack `ffmpeg.exe.lzma`; the **Lite** build does
+  not carry it.
+- Copyright (c) 1999-2023 Igor Pavlov. Public domain — https://www.7-zip.org/sdk.html

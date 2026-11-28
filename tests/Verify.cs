@@ -34,6 +34,11 @@ namespace Hd2Qd.HD2Music.Verify
             {
                 return Fail("file name is not HD2QD.<name>.dll");
             }
+            long length = new FileInfo(path).Length;
+            if (length > 25L * 1024 * 1024)
+            {
+                return Fail("the file is " + (length / 1048576.0).ToString("0.0") + " MB: a community plugin list takes at most 25 MB");
+            }
 
             Assembly asm;
             try
@@ -179,7 +184,7 @@ namespace Hd2Qd.HD2Music.Verify
                     Fail("embedded resource " + wanted + " is missing");
                 }
             }
-            Pass(names.Contains("ffmpeg.exe.gz") ? "embedded ffmpeg.exe.gz (full build)" : "lite build: decoder is external");
+            Pass(names.Contains("ffmpeg.exe.lzma") ? "embedded ffmpeg.exe.lzma (full build)" : "lite build: decoder is external");
             using (Stream icon = asm.GetManifestResourceStream("app.ico"))
             {
                 if (icon == null || icon.Length < 6)
@@ -945,7 +950,7 @@ namespace Hd2Qd.HD2Music.Verify
         }
 
         static void CheckFfmpeg(Assembly asm)        {
-            if (!asm.GetManifestResourceNames().Contains("ffmpeg.exe.gz"))
+            if (!asm.GetManifestResourceNames().Contains("ffmpeg.exe.lzma"))
             {
                 Pass("lite build: no embedded ffmpeg to extract");
                 return;

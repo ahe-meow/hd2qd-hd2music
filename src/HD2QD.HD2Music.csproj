@@ -33,6 +33,10 @@
     <!-- the QR encoder, embedded as a resource and loaded from bytes (QrCode.cs): the plugin
          stays one file. QRCoder 1.4.3, MIT, by Raffael Herrmann. -->
     <PackageReference Include="QRCoder" Version="1.4.3" GeneratePathProperty="true" PrivateAssets="all" ExcludeAssets="compile;runtime" />
+    <!-- the LZMA decoder of the 7-Zip SDK, embedded and loaded from bytes the same way
+         (Ffmpeg.cs): gzip left the Full build at 29.6 MB, over the 25 MB a plugin list
+         accepts; LZMA packs the same ffmpeg.exe to 20.7 MB. Public domain, Igor Pavlov. -->
+    <PackageReference Include="LZMA-SDK" Version="22.1.1" GeneratePathProperty="true" PrivateAssets="all" ExcludeAssets="compile;runtime" />
   </ItemGroup>
 
   <ItemGroup>
@@ -85,8 +89,9 @@
          for the picture on the plugin's card -->
     <EmbeddedResource Include="app.ico" LogicalName="app.ico" />
     <!-- the decoder, packed once and written out by Ffmpeg.cs where the player runs it -->
-    <EmbeddedResource Include="../assets/ffmpeg.exe.gz" LogicalName="ffmpeg.exe.gz" Condition="'$(EmbeddedFfmpeg)' == 'true'" />
+    <EmbeddedResource Include="../assets/ffmpeg.exe.lzma" LogicalName="ffmpeg.exe.lzma" Condition="'$(EmbeddedFfmpeg)' == 'true'" />
     <EmbeddedResource Include="$(PkgQRCoder)\lib\net40\QRCoder.dll" LogicalName="QRCoder.dll" />
+    <EmbeddedResource Include="$(PkgLZMA-SDK)\lib\net20\SevenZip.dll" LogicalName="SevenZip.dll" Condition="'$(EmbeddedFfmpeg)' == 'true'" />
     <Reference Include="System.Web.Extensions" />
   </ItemGroup>
 

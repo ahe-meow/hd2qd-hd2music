@@ -66,7 +66,7 @@ mono, and yellow is the only accent — the manager's own board, not a stock WPF
 
    | File | Size | Decoder |
    |---|---:|---|
-   | `HD2QD.HD2Music.dll` | ~29 MB | **Full**: FFmpeg 6.1.1 is inside the DLL and written out once on first use; zero setup. |
+   | `HD2QD.HD2Music.dll` | ~21 MB | **Full**: FFmpeg 6.1.1 is inside the DLL (LZMA-packed) and written out once on first use; zero setup. |
    | `HD2QD.HD2Music-Lite.dll` | ~340 KB | **Lite**: finds `ffmpeg.exe` through `HD2MUSIC_FFMPEG`, `ncm_ffmpeg.txt`, the plugin folder, `%LOCALAPPDATA%\HD2Phone`, the mod helper's `tools` folder, **`PATH`**, **App Paths in the registry**, or winget/scoop/chocolatey locations. |
 
 3. **Plugins** page → **Add plugin…** → the chosen file (or drop it on the page).
@@ -191,7 +191,7 @@ Current output:
   ok   Api = 2 (a const the manager reads before running any code)
   ok   Kind = window
   ok   embedded Lang.en.json, Lang.zh-CN.json, Ui.xaml, app.ico, QRCoder.dll
-  ok   embedded ffmpeg.exe.gz (full build)
+  ok   embedded ffmpeg.exe.lzma (full build)
   ok   references only .NET Framework assemblies (8)
   ok   QR encoder embedded (QRCoder, MIT): 29x29 matrix, no QRCoder.dll on disk
   ok   embedded ffmpeg extracted to a temp folder: 78 MB, SHA-256 matches
@@ -244,7 +244,7 @@ MIT — see [LICENSE](LICENSE).
 歌词和频谱照常工作。
 
 - 安装：管理器 0.25.0 以上 → 插件页 → 添加**其中一个**文件；以标签页打开，再次“打开”会回到同一页签。旧版 0.15.0–0.24.x 回退为独立窗口。
-  - `HD2QD.HD2Music.dll`：完整版，约 29 MB，内置 FFmpeg，首次启动自动释放。
+  - `HD2QD.HD2Music.dll`：完整版，约 21 MB，内置 FFmpeg（LZMA 压缩），首次启动自动释放。
   - `HD2QD.HD2Music-Lite.dll`：精简版，约 340 KB，自动查找 `ffmpeg.exe`：环境变量、设置页、助手 tools、插件目录、**PATH**、注册表 **App Paths**，以及 winget/scoop/chocolatey 常见位置。两个版本不要同时安装。
 - 播放需要游戏运行：播放器跟随 MOD 心跳，游戏退出即停止。未启动游戏时点击歌曲不会出声，底部状态栏会变黄并提示“未启动游戏 · 启动游戏后即可播放”（点击后显示引擎的“请先进入游戏并启用新版播放器”）。
 - 播放列表在管理器重启后保留在 `ncm_queue.json`：只保存队列与选中行，不保存播放进度。账号切换、登录失效、退出登录或重新选择歌单会清除/替换它。

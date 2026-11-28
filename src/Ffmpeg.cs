@@ -1,19 +1,20 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression;
+using System.Linq;
+using System.Reflection;
 using System.Security.Cryptography;
 using Microsoft.Win32;
 
 namespace Hd2Qd.HD2Music
 {
-    /// <summary>The decoder the player spawns. It travels in the DLL (assets\ffmpeg.exe.gz,
+    /// <summary>The decoder the player spawns. It travels in the DLL (assets\ffmpeg.exe.lzma,
     /// FFmpeg 6.1.1 essentials) and is written out once, next to the plugin or into the
     /// player's settings folder, when neither place has one. The extracted file is checked
     /// against the SHA-256 of the build that was packed.</summary>
     internal static class Ffmpeg
     {
-        internal const string Resource = "ffmpeg.exe.gz";
+        internal const string Resource = "ffmpeg.exe.lzma";
         internal const string Sha256 = "04e1307997530f9cf2fe35cba2ca7e8875ca91da02f89d6c7243df819c94ad00";
 #if EMBEDDED_FFMPEG
         internal const bool Embedded = true;
@@ -75,12 +76,11 @@ namespace Hd2Qd.HD2Music
                 {
                     if (packed == null)
                     {
-                        throw new InvalidOperationException("ffmpeg.exe.gz is not embedded");
+                        throw new InvalidOperationException("ffmpeg.exe.lzma is not embedded");
                     }
-                    using (var gzip = new GZipStream(packed, CompressionMode.Decompress))
                     using (var file = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
                     {
-                        gzip.CopyTo(file);
+                        Unpack(packed, file);
                     }
                 }
                 var info = new FileInfo(temporary);
@@ -108,6 +108,60 @@ namespace Hd2Qd.HD2Music
                 {
                 }
             }
+        }
+
+        static Type _decoder;
+
+        /// <summary>The resource is an .lzma stream: one byte of properties, four of dictionary
+        /// size, eight of the unpacked length, then the data. GZipStream would leave the Full
+        /// build at 29.6 MB, over the 25 MB a community plugin list accepts; this packs the
+        /// same ffmpeg.exe to 20.7 MB. SevenZip.dll (the 7-Zip SDK's decoder, public domain)
+        /// travels in the DLL as a resource and is loaded from bytes when first needed, as
+        /// QrCode.cs does with QRCoder.dll.</summary>
+        static void Unpack(Stream packed, Stream target)
+        {
+            byte[] header = new byte[13];
+            for (int got = 0; got < header.Length; )
+            {
+                int read = packed.Read(header, got, header.Length - got);
+                if (read <= 0)
+                {
+                    throw new InvalidDataException("the packed ffmpeg.exe is truncated");
+                }
+                got += read;
+            }
+            byte[] properties = new byte[5];
+            Buffer.BlockCopy(header, 0, properties, 0, properties.Length);
+            Type decoder = DecoderType();
+            object coder = Activator.CreateInstance(decoder);
+            decoder.GetMethod("SetDecoderProperties").Invoke(coder, new object[] { properties });
+            MethodInfo code = decoder.GetMethods().First(m => m.Name == "Code" && m.GetParameters().Length == 5);
+            code.Invoke(coder, new object[] { packed, target, -1L, BitConverter.ToInt64(header, properties.Length), null });
+        }
+
+        static Type DecoderType()
+        {
+            if (_decoder != null)
+            {
+                return _decoder;
+            }
+            using (Stream dll = typeof(Ffmpeg).Assembly.GetManifestResourceStream("SevenZip.dll"))
+            {
+                if (dll == null)
+                {
+                    throw new InvalidOperationException("SevenZip.dll is not embedded");
+                }
+                using (var bytes = new MemoryStream())
+                {
+                    dll.CopyTo(bytes);
+                    _decoder = Assembly.Load(bytes.ToArray()).GetType("SevenZip.Compression.LZMA.Decoder");
+                }
+            }
+            if (_decoder == null)
+            {
+                throw new InvalidOperationException("SevenZip.Compression.LZMA.Decoder is missing");
+            }
+            return _decoder;
         }
 
         static bool HashMatches(string path)

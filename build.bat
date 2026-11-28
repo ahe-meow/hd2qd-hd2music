@@ -1,6 +1,6 @@
 @echo off
 rem Builds two flavours of HD2QD.HD2Music.dll, a plugin of HD2 Mod Quick Deploy:
-rem   release\HD2QD.HD2Music.dll       full, FFmpeg inside (~29 MB)
+rem   release\HD2QD.HD2Music.dll       full, FFmpeg inside (~21 MB)
 rem   release\HD2QD.HD2Music-Lite.dll lite, uses an existing ffmpeg.exe (~340 KB)
 rem Needs the .NET SDK (8 or later): dotnet on PATH, or set DOTNET to its dotnet.exe.
 rem Verify.exe checks each file's contract, text, icon, framework references, the tab path and
