@@ -380,6 +380,14 @@ namespace Hd2Qd.HD2Music.Verify
 
         static void CheckPlaylistBrowse(Assembly asm)
         {
+            // A retired-buffer path freed pinned PCM while winmm could still write to it;
+            // that is native heap corruption, so keep the regression locked down.
+            Type waveOut = asm.GetType("Hd2Qd.HD2Music.WaveOut", true);
+            if (waveOut.GetField("_retired", BindingFlags.Instance | BindingFlags.NonPublic) != null)
+            {
+                Fail("WaveOut still frees buffers on a wall-clock timeout");
+                return;
+            }
             Type player = asm.GetType("Hd2Qd.HD2Music.StreamPlayer", true);
             if (player.GetMethod("StopOnGameChange", BindingFlags.Instance | BindingFlags.Public) != null)
             {

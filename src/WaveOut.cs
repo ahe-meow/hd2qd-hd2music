@@ -63,7 +63,6 @@ internal sealed class WaveOut : IDisposable
 
 		public double Duration;
 
-		public double Retired;
 	}
 
 	public const int Rate = 44100;
@@ -79,8 +78,6 @@ internal sealed class WaveOut : IDisposable
 	private IntPtr _handle;
 
 	private readonly List<Buffer> _buffers = new List<Buffer>();
-
-	private readonly List<Buffer> _retired = new List<Buffer>();
 
 	private readonly Stopwatch _clock = Stopwatch.StartNew();
 
@@ -164,45 +161,33 @@ internal sealed class WaveOut : IDisposable
 		}
 	}
 
+	/// <summary>
+	/// Only release a buffer after winmm has set WHDR_DONE. The previous wall-clock
+	/// timeout moved buffers into a retired list and freed their pinned PCM and WAVEHDR
+	/// while the device could still be writing to them — native heap corruption that
+	/// killed the host process instead of throwing a managed exception.
+	/// </summary>
 	public void Reap()
 	{
-		for (int num = _buffers.Count - 1; num >= 0; num--)
+		uint size = (uint)Marshal.SizeOf(typeof(WaveHeader));
+		for (int i = _buffers.Count - 1; i >= 0; i--)
 		{
-			Buffer buffer = _buffers[num];
-			bool flag = (((WaveHeader)Marshal.PtrToStructure(buffer.Header, typeof(WaveHeader))).Flags & 1) != 0;
-			bool flag2 = _clock.Elapsed.TotalSeconds - buffer.Enqueued >= buffer.Duration + 0.3;
-			if (flag || flag2)
+			Buffer buffer = _buffers[i];
+			uint flags = ((WaveHeader)Marshal.PtrToStructure(buffer.Header, typeof(WaveHeader))).Flags;
+			if ((flags & WhdrDone) == 0)
 			{
-				if (!flag)
-				{
-					_buffers.RemoveAt(num);
-					buffer.Retired = _clock.Elapsed.TotalSeconds;
-					_retired.Add(buffer);
-				}
-				else
-				{
-					waveOutUnprepareHeader(_handle, buffer.Header, (uint)Marshal.SizeOf(typeof(WaveHeader)));
-					FreeBuffer(buffer);
-					_buffers.RemoveAt(num);
-				}
+				continue;
 			}
-		}
-		double totalSeconds = _clock.Elapsed.TotalSeconds;
-		for (int num2 = _retired.Count - 1; num2 >= 0; num2--)
-		{
-			Buffer buffer2 = _retired[num2];
-			if (!(totalSeconds - buffer2.Retired < 10.0))
+			try
 			{
-				try
-				{
-					waveOutUnprepareHeader(_handle, buffer2.Header, (uint)Marshal.SizeOf(typeof(WaveHeader)));
-				}
-				catch
-				{
-				}
-				FreeBuffer(buffer2);
-				_retired.RemoveAt(num2);
+				Check(waveOutUnprepareHeader(_handle, buffer.Header, size));
 			}
+			catch
+			{
+				// still release the managed side below; winmm has reported the buffer done
+			}
+			FreeBuffer(buffer);
+			_buffers.RemoveAt(i);
 		}
 	}
 
@@ -291,6 +276,11 @@ internal sealed class WaveOut : IDisposable
 
 	public void Pause()
 	{
+		if (_handle == IntPtr.Zero)
+		{
+			return;
+		}
+		Util.Log("waveout pause h=" + _handle.ToInt64());
 		Check(waveOutPause(_handle));
 		if (!_pausedAt.HasValue)
 		{
@@ -300,6 +290,11 @@ internal sealed class WaveOut : IDisposable
 
 	public void Resume()
 	{
+		if (_handle == IntPtr.Zero)
+		{
+			return;
+		}
+		Util.Log("waveout resume h=" + _handle.ToInt64());
 		Check(waveOutRestart(_handle));
 		if (_pausedAt.HasValue)
 		{
@@ -334,18 +329,6 @@ internal sealed class WaveOut : IDisposable
 			FreeBuffer(buffer);
 		}
 		_buffers.Clear();
-		foreach (Buffer item in _retired)
-		{
-			try
-			{
-				waveOutUnprepareHeader(_handle, item.Header, size);
-			}
-			catch
-			{
-			}
-			FreeBuffer(item);
-		}
-		_retired.Clear();
 		try
 		{
 			waveOutClose(_handle);
